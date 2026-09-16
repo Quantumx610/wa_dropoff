@@ -1,0 +1,30 @@
+# --- DEPENDENCIES (Most critical for speed) ---
+node_modules/
+vendor/
+venv/
+.venv/
+env/
+__pycache__/
+
+# --- BUILD / OUTPUT ARTIFACTS ---
+dist/
+build/
+out/
+target/
+*.pyc
+*.pyo
+.pyd
+
+# --- OS & EDITOR CLUTTER ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# --- LOGS & DATABASES ---
+*.log
+*.sqlite
+*.sqlite3
+.env
