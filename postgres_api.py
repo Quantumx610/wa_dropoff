@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-env = os.getenv("FLASK_CONFIG")
+env = os.getenv("CONFIG")
 
 class PostgresDatabaseAPI:
     _instances = {}
@@ -22,47 +22,25 @@ class PostgresDatabaseAPI:
         "prod": "prod"
     }
 
-    # def __new__(cls, db_prefix=env):
-    #     # 1. Resolve which config to use
-    #     config_class = cls._CONFIG_MAP.get(db_prefix.lower())
-    #     if not config_class:
-    #         raise ValueError(f"Invalid DB prefix. Choose from: {list(cls._CONFIG_MAP.keys())}")
-
-    #     # 2. Use a unique key based on the prefix
-    #     with cls._lock:
-    #         if db_prefix not in cls._instances:
-    #             instance = super().__new__(cls)
-
-    #             # 3. Pull creds directly from the Config class
-    #             instance.db_pool = pool.ThreadedConnectionPool(
-    #                 minconn=3, maxconn=15,
-    #                 host=config_class.PGRE_HOST,
-    #                 port=config_class.PGRE_PORT,
-    #                 database=config_class.PGRE_DB,
-    #                 user=config_class.PGRE_UNAME,
-    #                 password=config_class.PGRE_PWD
-    #             )
-    #             cls._instances[db_prefix] = instance
-    #             logger.info(f"successfully connected {db_prefix} with new connection")
-    #         else:
-    #             # --- THIS BLOCK RUNS ON EVERY SUBSEQUENT CALL ---
-    #             logger.info(f"Reusing EXISTING connection pool for prefix: {db_prefix}")
-
-    #     return cls._instances[db_prefix]
-
     def __new__(cls, db_prefix=env):
+        # 1. Resolve which config to use
+        config_class = cls._CONFIG_MAP.get(db_prefix.lower())
+        if not config_class:
+            raise ValueError(f"Invalid DB prefix. Choose from: {list(cls._CONFIG_MAP.keys())}")
+
+        # 2. Use a unique key based on the prefix
         with cls._lock:
             if db_prefix not in cls._instances:
                 instance = super().__new__(cls)
 
-                # 3. Pull creds directly from .env using os.getenv
+                # 3. Pull creds directly from the Config class
                 instance.db_pool = pool.ThreadedConnectionPool(
                     minconn=3, maxconn=15,
-                    host=os.getenv("PGRE_HOST"),
-                    port=os.getenv("PGRE_PORT"),
-                    database=os.getenv("PGRE_DB"),
-                    user=os.getenv("PGRE_UNAME"),
-                    password=os.getenv("PGRE_PWD")
+                    host=config_class.PGRE_HOST,
+                    port=config_class.PGRE_PORT,
+                    database=config_class.PGRE_DB,
+                    user=config_class.PGRE_UNAME,
+                    password=config_class.PGRE_PWD
                 )
                 cls._instances[db_prefix] = instance
                 logger.info(f"successfully connected {db_prefix} with new connection")
@@ -71,6 +49,28 @@ class PostgresDatabaseAPI:
                 logger.info(f"Reusing EXISTING connection pool for prefix: {db_prefix}")
 
         return cls._instances[db_prefix]
+
+    # def __new__(cls, db_prefix=env):
+    #     with cls._lock:
+    #         if db_prefix not in cls._instances:
+    #             instance = super().__new__(cls)
+
+    #             # 3. Pull creds directly from .env using os.getenv
+    #             instance.db_pool = pool.ThreadedConnectionPool(
+    #                 minconn=3, maxconn=15,
+    #                 host=os.getenv("PGRE_HOST"),
+    #                 port=os.getenv("PGRE_PORT"),
+    #                 database=os.getenv("PGRE_DB"),
+    #                 user=os.getenv("PGRE_UNAME"),
+    #                 password=os.getenv("PGRE_PWD")
+    #             )
+    #             cls._instances[db_prefix] = instance
+    #             logger.info(f"successfully connected {db_prefix} with new connection")
+    #         else:
+    #             # --- THIS BLOCK RUNS ON EVERY SUBSEQUENT CALL ---
+    #             logger.info(f"Reusing EXISTING connection pool for prefix: {db_prefix}")
+
+    #     return cls._instances[db_prefix]
 
     @contextmanager
     def get_cursor(self):
