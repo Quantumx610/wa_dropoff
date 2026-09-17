@@ -1,4 +1,5 @@
 import json
+import uuid
 import logging
 import os
 import signal
@@ -6,9 +7,11 @@ import sys
 from datetime import datetime, timedelta, timezone
 from confluent_kafka import Consumer, KafkaError
 from dotenv import load_dotenv
-
 from cosmosdb_api import CosmosDatabaseAPI
 from postgres_api import PostgresDatabaseAPI
+from zoneinfo import ZoneInfo
+
+IST = ZoneInfo("Asia/Kolkata")
 
 # ============================================================
 # 1. SETUP & CONFIGURATION
@@ -57,13 +60,13 @@ kafka_conf = {
     'enable.auto.commit': False
 }
 
-try:
-    consumer = Consumer(kafka_conf)
-    consumer.subscribe([KAFKA_TOPIC])
-    logger.info(f"Kafka consumer subscribed to {KAFKA_TOPIC}.")
-except Exception as e:
-    logger.critical(f"Kafka connection failed: {e}", exc_info=True)
-    sys.exit(1)
+# try:
+#     consumer = Consumer(kafka_conf)
+#     consumer.subscribe([KAFKA_TOPIC])
+#     logger.info(f"Kafka consumer subscribed to {KAFKA_TOPIC}.")
+# except Exception as e:
+#     logger.critical(f"Kafka connection failed: {e}", exc_info=True)
+#     sys.exit(1)
 
 # ============================================================
 # 2. BUSINESS LOGIC & HELPERS
@@ -81,7 +84,7 @@ def dedupe_log_check(mobile_no: str, event_name: str) -> bool:
     Returns False if an entry exists within the 30-day window.
     """
     thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-    
+
     query = """
         SELECT TOP 1 c.id FROM c
         WHERE c.mobile_no = @mobile_no
@@ -105,43 +108,77 @@ def process_event(event: dict) -> bool:
     2. 30-day deduplication check & write (kafka_dedupe_log)
     3. Postgres state checks and updates
     """
-    mobile_no = event.get("mobile_no")
-    event_name = event.get("event_name")
 
-    if not mobile_no or not event_name:
-        logger.warning("Event missing critical fields: mobile_no or event_name.")
-        return False
+    correlation_id = str(uuid.uuid4())
+    received_at_ist = datetime.now(IST).strftime("%Y-%m-%dT%H:%M:%S")
+    received_at_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    event["correlation_id"] = correlation_id
+    event["received_at_ist"] = received_at_ist
+    event["received_at_utc"] = received_at_utc
 
     # Step 1: Input Log
     insert_input_log(event)
 
+    mobile_no = event.get("MobileNumber", None)
+    event_name = event.get("EventName", None)
+
+    if not mobile_no or not event_name:
+        logger.warning("Exit: Event missing critical fields: mobile_no or event_name.")
+        return False
+
+    cosmos_event = {}
+
+    cosmos_event["source"] = event.get("Source", "")
+    cosmos_event["app_version"] = event.get("AppVersion", "")
+    cosmos_event["platform"] = event.get("Platform", "")
+    cosmos_event["os"] = event.get("OS", "")
+    cosmos_event["journey"] = event.get("journey", "")
+    cosmos_event["event_name"] = event.get("EventName", "")
+    cosmos_event["mobile_no"] = event.get("MobileNumber", "")
+    cosmos_event["customer_flag"] = event.get("CustomerFlag", "")
+    cosmos_event["ucic"] = event.get("UCIC", "")
+    cosmos_event["ucic_value"] = event.get("UCIC_VALUE", "")
+    cosmos_event["lan_verified"] = event.get("LAN_VERIFIED", "")
+    cosmos_event["timestamp"] = event.get("Timestamp", "")
+    cosmos_event["response_code"] = event.get("Response Code", "")
+    cosmos_event["loan_amount"] = event.get("LoanAmount", "")
+    cosmos_event["correlation_id"] = correlation_id
+    cosmos_event["received_at_ist"] = received_at_ist
+    cosmos_event["received_at_utc"] = received_at_utc
+    
+    
     # Step 2: Deduplication Check
     if not dedupe_log_check(mobile_no, event_name):
         logger.info(f"Dedupe hit: {mobile_no} / {event_name} seen within 30 days.")
         return False
 
-    # Store event in dedupe tracking container
-    event["timestamp"] = datetime.now(timezone.utc).isoformat()
-    cosmos_db_api.dbInsert(COSMOS_DEDUPE_CONTAINER, event)
+    # Step 3: Store Eligible
+    cosmos_db_api.dbInsert(COSMOS_DEDUPE_CONTAINER, cosmos_event)
 
     # Step 3: PostgreSQL Calling Ledger
-    records = postgres_db_api.read("whatsapp_dropoff", filters={"mobile_no": mobile_no})
+    records = postgres_db_api.read("wa_dropoff", filters={"mobile_no": mobile_no})
 
     pg_payload = {
+        "correlation_id": correlation_id,
+        "source": event.get("Source", "NA"),
+        "customer_name": event.get("customerName", "Priya Grahak"),
+        "loan_amount": event.get("LoanAmount", "NA"),
+        "loan_tenure": event.get("Tenure", "NA"),
         "mobile_no": mobile_no,
         "event_name": event_name,
-        "is_process": False,
-        "call_triggered": False
+        "received_at_ist": received_at_ist,
+        "received_at_utc": received_at_utc
     }
 
     if not records:
-        postgres_db_api.insert("whatsapp_dropoff", pg_payload)
+        postgres_db_api.insert("wa_dropoff", pg_payload)
         logger.info(f"Created new drop-off record for {mobile_no}.")
         return True
 
     existing_record = dict(records[0])
 
-    if existing_record.get("is_process") is True:
+    if existing_record.get("is_processed") is True:
         logger.info(f"Skipping {mobile_no}: Record already processed.")
         return False
 
@@ -151,7 +188,7 @@ def process_event(event: dict) -> bool:
 
     # Update state for changed event
     postgres_db_api.update(
-        table_name="whatsapp_dropoff",
+        table_name="wa_dropoff",
         update_data={"event_name": event_name, "call_triggered": False},
         filters={"mobile_no": mobile_no}
     )
@@ -162,47 +199,47 @@ def process_event(event: dict) -> bool:
 # 3. STREAM PROCESSING LOOP
 # ============================================================
 
-running = True
+# running = True
 
-def handle_shutdown(signum, frame):
-    global running
-    logger.info("Shutdown signal received. Stopping consumer...")
-    running = False
+# def handle_shutdown(signum, frame):
+#     global running
+#     logger.info("Shutdown signal received. Stopping consumer...")
+#     running = False
 
-signal.signal(signal.SIGINT, handle_shutdown)
-signal.signal(signal.SIGTERM, handle_shutdown)
+# signal.signal(signal.SIGINT, handle_shutdown)
+# signal.signal(signal.SIGTERM, handle_shutdown)
 
-logger.info("Starting Kafka processing loop...")
+# logger.info("Starting Kafka processing loop...")
 
-try:
-    while running:
-        msg = consumer.poll(timeout=1.0)
-        if msg is None:
-            continue
+# try:
+#     while running:
+#         msg = consumer.poll(timeout=1.0)
+#         if msg is None:
+#             continue
 
-        if msg.error():
-            if msg.error().code() == KafkaError._PARTITION_EOF:
-                continue
-            logger.error(f"Kafka Consumer Error: {msg.error()}")
-            break
+#         if msg.error():
+#             if msg.error().code() == KafkaError._PARTITION_EOF:
+#                 continue
+#             logger.error(f"Kafka Consumer Error: {msg.error()}")
+#             break
 
-        value_str = msg.value().decode('utf-8') if msg.value() else "{}"
+#         value_str = msg.value().decode('utf-8') if msg.value() else "{}"
 
-        try:
-            val_json = json.loads(value_str)
-        except json.JSONDecodeError:
-            logger.warning(f"Invalid JSON at offset {msg.offset()}. Committing and skipping.")
-            consumer.commit(message=msg, asynchronous=False)
-            continue
+#         try:
+#             val_json = json.loads(value_str)
+#         except json.JSONDecodeError:
+#             logger.warning(f"Invalid JSON at offset {msg.offset()}. Committing and skipping.")
+#             consumer.commit(message=msg, asynchronous=False)
+#             continue
 
-        source = val_json.get("Source", "")
-        if source and source.strip().upper() == "SUPERAPP":
-            # Direct processing down the pipeline (no raw document upsert)
-            process_event(val_json)
+#         source = val_json.get("Source", "")
+#         if source and source.strip().upper() == "SUPERAPP":
+#             # Direct processing down the pipeline (no raw document upsert)
+#             process_event(val_json)
 
-        # Commit offset after successful consumption
-        consumer.commit(message=msg, asynchronous=False)
+#         # Commit offset after successful consumption
+#         consumer.commit(message=msg, asynchronous=False)
 
-finally:
-    logger.info("Closing Kafka consumer safely.")
-    consumer.close()
+# finally:
+#     logger.info("Closing Kafka consumer safely.")
+#     consumer.close()

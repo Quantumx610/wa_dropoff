@@ -183,10 +183,10 @@ def main(event):
     new_event = cosmos_db_api.dbInsert(event)
 
     # step 3 | Store in postgres for calling
-    record = postgres_db_api.read("whatsapp_dropoff", filters={"mobile_no": event.get("mobile_no")})
+    record = postgres_db_api.read("wa_dropoff", filters={"mobile_no": event.get("mobile_no")})
 
     if not record:
-        postgres_db_api.insert("whatsapp_dropoff", event)
+        postgres_db_api.insert("wa_dropoff", event)
         return 1
 
     if record and len(record) > 1:
@@ -194,14 +194,14 @@ def main(event):
 
     existing_record = dict(record[0])
 
-    if existing_record["is_process"] == True:
+    if existing_record["is_processed"] == True:
         return 0
 
     
     if existing_record["event_name"] == event.get("event_name"):
         return 0
     
-    postgres_db_api.update("whatsapp_dropoff", {"event_name": event.get("event_name"), "call_triggered": False})
+    postgres_db_api.update("wa_dropoff", {"event_name": event.get("event_name"), "call_triggered": False})
 
     return 1
         
