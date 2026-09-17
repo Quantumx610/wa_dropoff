@@ -2,8 +2,10 @@ from datetime import datetime, timedelta, timezone
 import json
 import time
 from confluent_kafka import Consumer, KafkaError
-from cosmoscosmos_db_api import CosmosDatabaseAPI
+from cosmosdb_api import CosmosDatabaseAPI
 from postgres_api import PostgresDatabaseAPI 
+import os
+from dotenv import load_file, load_dotenv
 
 # ============================================================
 # 1. CONFIGURATION
@@ -13,6 +15,16 @@ from postgres_api import PostgresDatabaseAPI
 # COSMOS DB CONFIGURATION
 # -------------------------
 
+# Load environment variables from the .env file
+load_dotenv()
+
+# Retrieve the variables
+COSMOS_ENDPOINT = os.getenv("COSMOS_ENDPOINT")
+COSMOS_KEY = os.getenv("COSMOS_KEY")
+COSMOS_DATABASE = os.getenv("COSMOS_DATABASE")
+COSMOS_CONTAINER = os.getenv("COSMOS_CONTAINER")
+KAFKA_TOPIC = os.getenv("KAFKA_TOPIC")
+KAFKA_PASSWORD = os.getenv("KAFKA_PASSWORD")
 
 try:
     # Initialize your custom wrapper class

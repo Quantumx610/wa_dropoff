@@ -19,7 +19,7 @@ limiter = strategies.MovingWindowRateLimiter(storage)
 SARVAM_LIMIT = parse("200 per 1 minute")
 
 load_dotenv()
-env = os.getenv('FLASK_CONFIG')
+env = os.getenv('CONFIG', "uat")
 
 
 db_api = PostgresDatabaseAPI(env)
@@ -35,11 +35,7 @@ class SarvamService:
 
     @classmethod
     def init_service(cls, config, logger=None):
-        cls._config = config.get("API_META_DATA", {}).get("cibil_trigger", {})
-        if logger:
-            cls._logger = logger
-        cls._logger.info("Sarvam Service Initialized")
-        cls._session.headers.update({"X-API-Key": cls._config.get("SARVAM_API_KEY")})
+        cls._session.headers.update({"X-API-Key": os.getenv("SARVAM_API_KEY")})
 
     @classmethod
     def trigger_outbound_call(cls, name, phone, customer_intent, branch, correlation_id):
@@ -47,15 +43,15 @@ class SarvamService:
             time.sleep(0.1)
 
         meta = cls._config
-        url = f"https://apps.sarvam.ai/api/outbounds/v1/orgs/{meta.get('SARVAM_ORG_ID')}/workspaces/{meta.get('SARVAM_WORKSPACE_ID')}/outbounds"
+        url = f"https://apps.sarvam.ai/api/outbounds/v1/orgs/{os.getenv('SARVAM_ORG_ID')}/workspaces/{os.getenv('SARVAM_WORKSPACE_ID')}/outbounds"
 
         payload = {
             "app_config": {
-                "app_id": meta.get("SARVAM_APP_ID"),
-                "app_version": meta.get("SARVAM_APP_VERSION"),
+                "app_id": os.getenv("SARVAM_APP_ID"),
+                "app_version": os.getenv("SARVAM_APP_VERSION"),
                 "connection_config": {
-                    "connection_id": meta.get("SARVAM_CONNECTION_ID"),
-                    "agent_phone_number": meta.get("SARVAM_AGENT_NUMBER")
+                    "connection_id": os.getenv("SARVAM_CONNECTION_ID"),
+                    "agent_phone_number": os.getenv("SARVAM_AGENT_NUMBER")
                 },
                 "agent_variables": {
                     "full_name": name, "intent": customer_intent,
