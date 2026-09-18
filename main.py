@@ -25,13 +25,12 @@ def start_scheduler():
     # Base Data Transfer
     scheduler.add_job(
         calling_job,
-        trigger=IntervalTrigger(minutes=1),
+        trigger=IntervalTrigger(seconds=12),
         id="calling_job",
         name="calling_job",
         replace_existing=True,
         max_instances=1
     )
-
 
     logger.info("Starting APScheduler service...")
     try:

@@ -43,6 +43,7 @@ class SarvamService:
         phone,
         event_name,
         loan_amount_offered,
+        loan_tenure,
         correlation_id,
     ):
         while not limiter.hit(SARVAM_LIMIT, "sarvam_api"):
@@ -59,9 +60,10 @@ class SarvamService:
                     "agent_phone_number": os.getenv("SARVAM_AGENT_NUMBER"),
                 },
                 "agent_variables": {
-                    "full_name": customer_name,
-                    "event_name": event_name,
-                    "loan_amount_offered": loan_amount_offered,
+                    "customer_name": customer_name,
+                    "current_dropoff_state": event_name,
+                    "loan_amount": loan_amount_offered,
+                    "loan_tenure": loan_tenure,
                     "correlation_id": correlation_id,
                 },
                 "app_type": "agent",
@@ -127,6 +129,7 @@ class SarvamService:
                     row["mobile_no"],
                     row.get("event_name", ""),
                     row.get("loan_amount", ""),
+                    row.get("loan_tenure", ""),
                     row["correlation_id"],
                 ): row["correlation_id"]
                 for row in dict_rows

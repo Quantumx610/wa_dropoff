@@ -1,11 +1,12 @@
 import threading
 from psycopg2 import pool, sql, OperationalError, InterfaceError
-from psycopg2.extras import RealDictCursor
+from psycopg2.extras import RealDictCursor, execute_values
 from contextlib import contextmanager
 import os
 from dotenv import load_dotenv
 # from config import DevelopmentConfig, ProductionConfig 
 import logging
+import pandas as pd
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,60 @@ class PostgresDatabaseAPI:
                 return cursor.fetchone()
         except Exception as e:
             print(f"Insert Error: {e}")
+            return None
+
+    # -----------------------------
+    # CREATE BULK(INSERT BULK PANDAS DF)
+    # -----------------------------
+    def insert_bulk_df(self, table_name: str, df, allowed_columns: list):
+        """
+        Inserts a Pandas DataFrame into PostgreSQL in bulk using psycopg2's execute_values.
+        
+        :param table_name: String name of the target database table.
+        :param df: Pandas DataFrame containing the data.
+        :param allowed_columns: List of column names that are allowed to be inserted.
+        :return: Number of inserted rows or None on error.
+        """
+        if df is None or df.empty:
+            logger.warning("DataFrame is empty or None. Skipping bulk insert.")
+            return 0
+
+        if not allowed_columns:
+            logger.error("allowed_columns list cannot be empty.")
+            return None
+
+        # 1. Check for missing columns in DataFrame
+        missing_cols = [col for col in allowed_columns if col not in df.columns]
+        if missing_cols:
+            logger.error(f"Bulk Insert Error: DataFrame missing required columns: {missing_cols}")
+            return None
+
+        try:
+            # 2. Filter DataFrame to include ONLY the allowed columns
+            filtered_df = df[allowed_columns].copy()
+
+            # 3. Clean NaN/NaT values to native None for SQL NULL mapping
+            filtered_df = filtered_df.astype(object).where(pd.notnull(filtered_df), None)
+
+            # 4. Convert DataFrame rows to list of tuples
+            tuples_data = [tuple(x) for x in filtered_df.to_numpy()]
+
+            with self.get_cursor() as cursor:
+                # Construct dynamic INSERT query
+                query = sql.SQL("INSERT INTO {table} ({fields}) VALUES %s").format(
+                    table=sql.Identifier(table_name),
+                    fields=sql.SQL(", ").join(map(sql.Identifier, allowed_columns))
+                )
+
+                # High-performance bulk insert using psycopg2's execute_values
+                execute_values(cursor, query, tuples_data)
+                
+                rowcount = cursor.rowcount
+                logger.info(f"Successfully bulk inserted {rowcount} rows into {table_name}.")
+                return rowcount
+
+        except Exception as e:
+            logger.error(f"Bulk Insert DF Error into '{table_name}': {e}", exc_info=True)
             return None
 
     # ------------------------

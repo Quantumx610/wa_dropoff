@@ -37,6 +37,8 @@ KAFKA_TOPIC = os.getenv("KAFKA_TOPIC")
 KAFKA_PASSWORD = os.getenv("KAFKA_PASSWORD")
 DB_ENV = os.getenv("FLASK_CONFIG", "uat")
 
+SARVAM_TOTAL_ATTEMPTS = os.getenv("SARVAM_TOTAL_ATTEMPTS")
+
 try:
     cosmos_db_api = CosmosDatabaseAPI(
         url=COSMOS_ENDPOINT, 
@@ -89,14 +91,14 @@ def dedupe_log_check(mobile_no: str, event_name: str) -> bool:
         SELECT TOP 1 c.id FROM c
         WHERE c.mobile_no = @mobile_no
         AND c.event_name = @event_name
-        AND c.timestamp >= @thirty_days_ago
+        AND c.received_at_utc >= @thirty_days_ago
     """
     params = [
         {"name": "@mobile_no", "value": mobile_no},
         {"name": "@event_name", "value": event_name},
         {"name": "@thirty_days_ago", "value": thirty_days_ago},
     ]
-    
+
     existing = cosmos_db_api.dbGetOne(collection=COSMOS_DEDUPE_CONTAINER, keyValues=query, params=params)
     return existing is None
 
@@ -113,7 +115,7 @@ def process_event(event: dict) -> bool:
     received_at_ist = datetime.now(IST).strftime("%Y-%m-%dT%H:%M:%S")
     received_at_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    event["correlation_id"] = correlation_id
+    event["id"] = correlation_id
     event["received_at_ist"] = received_at_ist
     event["received_at_utc"] = received_at_utc
 
@@ -143,11 +145,10 @@ def process_event(event: dict) -> bool:
     cosmos_event["timestamp"] = event.get("Timestamp", "")
     cosmos_event["response_code"] = event.get("Response Code", "")
     cosmos_event["loan_amount"] = event.get("LoanAmount", "")
-    cosmos_event["correlation_id"] = correlation_id
+    cosmos_event["id"] = correlation_id
     cosmos_event["received_at_ist"] = received_at_ist
     cosmos_event["received_at_utc"] = received_at_utc
-    
-    
+
     # Step 2: Deduplication Check
     if not dedupe_log_check(mobile_no, event_name):
         logger.info(f"Dedupe hit: {mobile_no} / {event_name} seen within 30 days.")
@@ -158,6 +159,8 @@ def process_event(event: dict) -> bool:
 
     # Step 3: PostgreSQL Calling Ledger
     records = postgres_db_api.read("wa_dropoff", filters={"mobile_no": mobile_no})
+
+    # Step 4: is_processed = True for this particular mobile_no
 
     pg_payload = {
         "correlation_id": correlation_id,
@@ -180,6 +183,10 @@ def process_event(event: dict) -> bool:
 
     if existing_record.get("is_processed") is True:
         logger.info(f"Skipping {mobile_no}: Record already processed.")
+        return False
+    
+    if existing_record.get("call_count") >= SARVAM_TOTAL_ATTEMPTS:
+        logger.info(f"Skipping {mobile_no}: Record reached max attempts: {SARVAM_TOTAL_ATTEMPTS}.")
         return False
 
     if existing_record.get("event_name") == event_name:
