@@ -1,4 +1,8 @@
+import json
 import os
+import numpy as np
+from psycopg2 import sql
+from psycopg2.extras import execute_values
 from datetime import datetime, time as dtime, timedelta, timezone
 import logging
 import pandas as pd
@@ -7,6 +11,8 @@ import requests
 from postgres_api import PostgresDatabaseAPI
 from sarvam_service import SarvamService
 from dotenv import load_dotenv
+
+
 logger = logging.getLogger(__name__)
 
 load_dotenv()
@@ -66,20 +72,23 @@ def get_interactions():
 
     headers = {"X-API-Key": sarvam_api_key}
     now_utc = datetime.now(timezone.utc)
-    start_time = now_utc - timedelta(minutes=60)
-    # start_time = now_utc - timedelta(hours=7)
-    fmt = '%Y-%m-%dT%H:%M:%S'
+    fmt = "%Y-%m-%dT%H:%M:%SZ"
     base_url = f"https://apps.sarvam.ai/api/analytics/v1/{org_id}/{workspace_id}/{app_id}"
 
     # --- HELPER: Fetch Paginated ---
     def fetch_paginated_data(endpoint_type, start_datetime):
         all_items, current_url = [], f"{base_url}/{endpoint_type}"
-        current_params = {"start_datetime": start_datetime, "end_datetime": now_utc.strftime(fmt), "limit": 100}
+        current_params = {
+            "start_datetime": start_datetime,
+            "end_datetime": now_utc.strftime(fmt),
+            "limit": 100,
+        }
 
         while current_url:
-            logger.info(f"Giving 1 second break before hitting url: {current_url}")
-            response = requests.get(current_url, headers=headers, params=current_params)
-
+            logger.info(f"Going to hit url: {current_url}")
+            response = requests.get(
+                current_url, headers=headers, params=current_params
+            )
             response.raise_for_status()
             data = response.json()
 
@@ -88,63 +97,201 @@ def get_interactions():
 
             if next_uri and next_uri.strip():
                 current_params = {}
-                current_url = f"{base_url}/{endpoint_type}{next_uri}" if next_uri.startswith("?") else next_uri
-            else: current_url = None
+                current_url = (
+                    f"{base_url}/{endpoint_type}{next_uri}"
+                    if next_uri.startswith("?")
+                    else next_uri
+                )
+            else:
+                current_url = None
 
         return pd.DataFrame(all_items)
 
     try:
-        # 1. FETCH & INITIAL CLEANING
-        created_at = "SELECT MAX(created_at) FROM wa_interactions"
+        # =====================================================================
+        # 1. DATABASE LOOKUP & API FETCH
+        # =====================================================================
+        max_created_res = postgres_db_api.execute_raw_query("SELECT MAX(created_at) FROM wa_interactions;")
 
-        if created_at is None:
-            created_at = now_utc
+        created_at = (max_created_res[0]["max"] if max_created_res and max_created_res[0]["max"] else (now_utc - timedelta(minutes=60)))
 
         less_10_min = (created_at - timedelta(minutes=10)).strftime(fmt)
 
-        df_int = fetch_paginated_data("interactions", less_10_min)
-
-        # =====================================================================
-        # FETCH & INITIAL CLEANING
-        # =====================================================================
-        if 'channel_direction' in df_int.columns:
-            df_int = df_int[df_int['channel_direction'] != 'inbound']
+        df_int = fetch_paginated_data("interactions", "2026-09-18T03:10:59Z")
 
         if df_int.empty:
-            logger.info("No attempts found.")
+            logger.info("No attempts found from API.")
             return
 
-        select_correlation_id = f"SELECT correlation_id FROM wa_interactions WHERE created_at BETWEEN '{less_10_min}' AND '{now_utc}'"
+        if "channel_direction" in df_int.columns:
+            df_int = df_int[df_int["channel_direction"] != "inbound"]
 
-        correlation_ids = set(select_correlation_id)
+        if df_int.empty:
+            logger.info("No outbound interactions after filtering.")
+            return
 
-        merge_df = pd.merge(df_int, correlation_ids, how='left', indicator=True)
+        # =====================================================================
+        # 2. FLATTEN AGENT VARIABLES (PRE-MERGE)
+        # =====================================================================
+        # Normalize agent_variables first to extract 'correlation_id' for deduplication
+        if "agent_variables" in df_int.columns:
+            df_int["vars"] = df_int["agent_variables"].apply(lambda x: x if isinstance(x, dict) else {})
+            normalized_vars = pd.json_normalize(df_int["vars"]).set_index(df_int.index)
+            base_columns_df = df_int.drop(["agent_variables", "vars"], axis=1, errors="ignore")
+            flattened_df = pd.concat([base_columns_df, normalized_vars], axis=1)
+        else:
+            flattened_df = df_int.copy()
 
-        cleaned_df = merge_df[merge_df['_merge'] == 'left_only'].reset_index(drop=True)
+        # act immediately is_processed to True if user said do not call me
+        if "do_not_call" in flattened_df.columns:
+            do_not_call_df = flattened_df[flattened_df["do_not_call"] == "yes"]
+            do_not_call_correlation_ids = do_not_call_df["correlation_id"].dropna().unique().tolist()
 
-        cleaned_df['vars'] = cleaned_df['agent_variables'].apply(lambda x: x if isinstance(x, dict) else {})
+            postgres_db_api.update_bulk("wa_dropoff", {"is_processed": True}, "correlation_id", do_not_call_correlation_ids)
 
-        # CRITICAL FIX: Normalize while explicitly clamping the index to merged_df to stop row-shifting!
-        normalized_vars = pd.json_normalize(cleaned_df['vars']).set_index(cleaned_df.index)
-
-        # Strip complex JSON structures and perform horizontal concatenation safely
-        base_columns_df = cleaned_df.drop(['agent_variables', 'vars'], axis=1, errors='ignore')
-
-        final_df = pd.concat([base_columns_df, normalized_vars], axis=1)
-
-        columns_to_insert = ["customer_name", "mobile_no", "event_name"]
-
-        # Execute bulk insert
-        inserted_count = postgres_db_api.insert_bulk_df(
-            table_name="wa_dropoff", 
-            df=final_df, 
-            allowed_columns=columns_to_insert
+        # =====================================================================
+        # 3. PANDAS MERGE ANTI-JOIN FOR CORRELATION IDs
+        # =====================================================================
+        existing_db_records = postgres_db_api.execute_raw_query(
+            "SELECT correlation_id FROM wa_interactions WHERE created_at BETWEEN %s AND %s AND correlation_id IS NOT NULL;",
+            (less_10_min, now_utc.strftime(fmt)),
         )
 
-        logger.info(f"Total inserted: {inserted_count}")
+        if existing_db_records and "correlation_id" in flattened_df.columns:
+            db_df = pd.DataFrame(existing_db_records)[["correlation_id"]].drop_duplicates()
+            
+            merged_df = pd.merge(
+                flattened_df, 
+                db_df, 
+                on="correlation_id", 
+                how="left", 
+                indicator=True
+            )
+            cleaned_df = (
+                merged_df[merged_df["_merge"] == "left_only"]
+                .drop(columns=["_merge"])
+                .reset_index(drop=True)
+            )
+        else:
+            cleaned_df = flattened_df.reset_index(drop=True)
 
-        # Clean out empty/missing attempt keys and ignore unassigned worker rows
-        df_int = df_int.dropna(subset=['attempt_id']).query("attempt_id != 'NO_JOB_ID'").drop_duplicates('attempt_id')
+        if cleaned_df.empty:
+            logger.info("All fetched records already exist in database.")
+            return
+
+        # =====================================================================
+        # 4. PREPARE ALL COLUMNS FOR DATABASE INSERTION
+        # =====================================================================
+        all_table_columns = [
+            "interaction_id", "user_identifier", "duration_in_seconds", "start_datetime",
+            "end_datetime", "language_name", "num_messages", "average_agent_response_time_in_seconds",
+            "average_user_response_time_in_seconds", "user_contact_masked", "user_contact_hashed",
+            "user_contact", "channel_direction", "retry_attempt", "campaign_id", "cohort_id",
+            "is_debug_call", "audio_url", "job_id", "channel_type", "channel_provider",
+            "channel_protocol", "server_retry_attempt", "failure_reason", "ended_by",
+            "has_log_issues", "attempted_at", "correlation_id", "customer_name",
+            "current_dropoff_state", "loan_amount", "loan_tenure", "reschedule_date",
+            "reschedule_time", "next_emi_ptp_date", "customer_verification_type",
+            "customer_verification", "call_disposition", "wrong_number", "do_not_call",
+            "journey_progressed_during_call", "bank_verification_status", "emandate_status",
+            "esign_status"
+        ]
+
+        valid_cols = [c for c in all_table_columns if c in cleaned_df.columns]
+
+        if not valid_cols:
+            logger.warning("No valid columns found to insert into wa_interactions.")
+            return
+
+        # Step A: Filter down to valid columns
+        cleaned_df = cleaned_df[valid_cols].copy()
+
+        # Step B: Clean function to catch float NaNs, empty strings, and stringified nulls
+        def clean_val(val):
+            if pd.isna(val) or val is None:
+                return None
+            val_str = str(val).strip()
+            if val_str == "" or val_str.lower() in ("nan", "none", "<na>", "null"):
+                return None
+            return val_str
+
+        cleaned_df = cleaned_df[valid_cols].copy()
+
+        # Standardize string representations ("nan", "none", "", etc.) to true NaN
+        cleaned_df = cleaned_df.replace(
+            to_replace=r"^(?i:\s*|nan|none|<na>|null)\s*$", 
+            value=np.nan, 
+            regex=True
+        )
+
+        # Replace all np.nan/None across the whole DataFrame with Python None
+        # using object casting via .to_numpy() to bypass Pandas auto-converting None back to np.nan
+        cleaned_df = pd.DataFrame(
+            np.where(pd.isna(cleaned_df), None, cleaned_df),
+            columns=cleaned_df.columns,
+            index=cleaned_df.index
+        )
+        # ----------------------------------
+
+        # =====================================================================
+        # 5. CHUNKED ATOMIC BULK INSERT (MAIN TABLE + API OUTBOX)
+        # =====================================================================
+        CHUNK_SIZE = 250
+        total_rows = len(cleaned_df)
+        num_chunks = int(np.ceil(total_rows / CHUNK_SIZE))
+
+        # Build dynamic SQL queries
+        insert_interactions_query = sql.SQL(
+            "INSERT INTO {table} ({fields}) VALUES %s ON CONFLICT (interaction_id) DO NOTHING"
+        ).format(
+            table=sql.Identifier("wa_interactions"),
+            fields=sql.SQL(", ").join(map(sql.Identifier, valid_cols)),
+        )
+
+        insert_outbox_query = sql.SQL(
+            "INSERT INTO {table} (interaction_id, correlation_id, event_name, mobile_no, api_name, status) VALUES %s ON CONFLICT (interaction_id) DO NOTHING"
+        ).format(table=sql.Identifier("api_outbox"))
+
+        total_inserted = 0
+
+        with postgres_db_api.transaction() as cursor:
+            for i in range(num_chunks):
+                chunk_df = cleaned_df.iloc[
+                    i * CHUNK_SIZE : (i + 1) * CHUNK_SIZE
+                ].copy()
+
+                # A. Prepare tuples for wa_interactions (No need for extra cleaning here)
+                main_tuples = [
+                    tuple(row[col] for col in valid_cols)
+                    for _, row in chunk_df.iterrows()
+                ]
+
+                # B. Prepare tuples for api_outbox
+                outbox_tuples = [
+                    (
+                        row.get("interaction_id"),
+                        row.get("correlation_id"),
+                        row.get("current_dropoff_state"),
+                        str(row.get("user_contact"))[-10:] if row.get("user_contact") else None,
+                        "create_enquiry",
+                        "PENDING"
+                    )
+                    for _, row in chunk_df.iterrows()
+                    if row.get("correlation_id")  # Skip rows missing correlation_id
+                ]
+
+                # Execute inserts
+                execute_values(cursor, insert_interactions_query, main_tuples, page_size=1000)
+
+                if outbox_tuples:
+                    execute_values(cursor, insert_outbox_query, outbox_tuples, page_size=1000)
+
+                total_inserted += len(main_tuples)
+                logger.info(
+                    f"Processed chunk {i + 1}/{num_chunks} ({len(main_tuples)} rows)"
+                )
+
+        logger.info(f"Successfully committed total inserted interactions: {total_inserted}")
+
     except Exception as e:
-        logger.error(f"this is error: {str(e)}")
-
+        logger.error(f"Error executing get_interactions scheduler: {str(e)}", exc_info=True)

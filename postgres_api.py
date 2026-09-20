@@ -18,6 +18,8 @@ class PostgresDatabaseAPI:
     _instances = {}
     _lock = threading.Lock()
 
+    db_pool: pool.ThreadedConnectionPool
+
     _CONFIG_MAP = {
         "uat": "uat",
         "prod": "prod"
@@ -121,6 +123,50 @@ class PostgresDatabaseAPI:
                     self.db_pool.putconn(conn)
                 except Exception as e:
                     logger.error(f"Error returning connection to pool: {e}")
+
+    @contextmanager
+    def transaction(self):
+        """
+        Context manager for atomic multi-statement transactions (e.g., Outbox Pattern).
+        Ensures ALL operations commit together or ALL rollback on failure.
+        """
+        conn = None
+        try:
+            conn = self.db_pool.getconn()
+            
+            # Health Check
+            try:
+                with conn.cursor() as health_check:
+                    health_check.execute("SELECT 1")
+            except (OperationalError, InterfaceError):
+                logger.warning("Dead connection retrieved for transaction. Discarding...")
+                if conn:
+                    self.db_pool.putconn(conn, close=True)
+                conn = self.db_pool.getconn()
+
+            # Turn OFF autocommit to enable explicit transaction block
+            conn.autocommit = False
+
+            with conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                yield cursor  # Yield the cursor bound to this transaction
+            
+            # If code inside 'with db.transaction()' finishes without raising an exception:
+            conn.commit()
+
+        except Exception as e:
+            if conn:
+                conn.rollback()
+                logger.error(f"Transaction failed. Rolled back changes: {e}", exc_info=True)
+            raise e
+
+        finally:
+            if conn:
+                try:
+                    # Reset connection state before returning to pool
+                    conn.autocommit = True
+                    self.db_pool.putconn(conn)
+                except Exception as e:
+                    logger.error(f"Error returning transaction connection to pool: {e}")
 
     # ------------------------
     # CREATE (INSERT)
@@ -385,3 +431,5 @@ class PostgresDatabaseAPI:
             logger.error(f"Raw Query Error: {e}")
             print(f"Raw Query Error: {e}")
             return None
+
+

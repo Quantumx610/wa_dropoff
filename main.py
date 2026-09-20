@@ -5,7 +5,7 @@ from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from kafka_cosmos_v1 import process_event
 from sarvam_service import SarvamService
-from scheduler import calling_job
+from scheduler import calling_job, get_interactions
 
 
 logging.basicConfig(
@@ -23,11 +23,20 @@ def start_scheduler():
     scheduler = BlockingScheduler(timezone="Asia/Kolkata")
 
     # Base Data Transfer
+    # scheduler.add_job(
+    #     calling_job,
+    #     trigger=IntervalTrigger(seconds=12),
+    #     id="calling_job",
+    #     name="calling_job",
+    #     replace_existing=True,
+    #     max_instances=1
+    # )
+
     scheduler.add_job(
-        calling_job,
-        trigger=IntervalTrigger(seconds=12),
-        id="calling_job",
-        name="calling_job",
+        get_interactions,
+        trigger=IntervalTrigger(seconds=40),
+        id="get_interactions",
+        name="get_interactions",
         replace_existing=True,
         max_instances=1
     )
