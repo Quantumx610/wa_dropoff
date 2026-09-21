@@ -62,6 +62,10 @@ def calling_job():
 
     logger.info(f"This is the valid calls: {validated_df.count()}")
 
+    calling_cids = validated_df["correlation_id"].dropna().unique().tolist()
+
+    postgres_db_api.update_bulk("wa_dropoff", {"call_triggered": True, "call_state": "pending"}, "correlation_id", calling_cids)
+
     # 4. Execute Sarvam Service Batch
     SarvamService.process_batch(validated_df)
     return True
@@ -295,3 +299,24 @@ def get_interactions():
 
     except Exception as e:
         logger.error(f"Error executing get_interactions scheduler: {str(e)}", exc_info=True)
+
+
+def push_rechurn_queue():
+    # Part-1 : dequeue the records who reached max attempts
+    cycle_ends = postgres_db_api.read("wa_dropoff", "correlation_id", {"call_count": {"op": ">=", "val": str(total_attempts)}}) 
+    if cycle_ends:
+        unique_cycle_ends = set(cycle_ends)
+        postgres_db_api.update_bulk("wa_dropoff", {"is_processed": True}, "correlation_id", unique_cycle_ends)
+
+    # Part-2 : Queue the records who did not 
+    thirty_mins_ago = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+
+    rechurn_records = postgres_db_api.read("wa_dropoff", "correlation_id", {"is_processed": False, "call_count": {"op": "<", "val": str(total_attempts)}, "created_at": {"op": "<", "val": thirty_mins_ago}, "updated_at": {"op": "<", "val": thirty_mins_ago}})
+
+    if not rechurn_records:
+        logger.info("No records for rechurn.")
+        return
+
+    unique_ids = set(rechurn_records)
+
+    postgres_db_api.update_bulk("wa_dropoff", {"call_trigger": False}, "correlation_id", unique_ids)
