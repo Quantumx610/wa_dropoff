@@ -146,7 +146,6 @@ def process_event(event: dict) -> bool:
     cosmos_event["timestamp"] = event.get("Timestamp", "")
     cosmos_event["response_code"] = event.get("Response Code", "")
     cosmos_event["loan_amount"] = event.get("LoanAmount", "")
-    cosmos_event["correlation_id"] = correlation_id
     cosmos_event["received_at_ist"] = received_at_ist
     cosmos_event["received_at_utc"] = received_at_utc
 

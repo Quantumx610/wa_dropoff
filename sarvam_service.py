@@ -106,7 +106,6 @@ class SarvamService:
 
             limit_query = f"""
                 UPDATE wa_dropoff 
-                UPDATE wa_dropoff 
                 SET is_processed = True 
                 WHERE correlation_id IN %s 
                 AND call_count >= {total_attempts}
