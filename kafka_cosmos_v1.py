@@ -124,13 +124,14 @@ def process_event(event: dict) -> bool:
 
     mobile_no = event.get("MobileNumber", None)
     event_name = event.get("EventName", None)
+    enquiry_id = event.get("Enquiry_ID", None)
 
-    if not mobile_no or not event_name:
-        logger.warning("Exit: Event missing critical fields: mobile_no or event_name.")
+    if not mobile_no or not event_name or not enquiry_id :
+        logger.warning("Exit: Event missing critical fields: mobile_no or event_name or enquiry_id. ")
         return False
 
     cosmos_event = {}
-
+    cosmos_event["id"] = correlation_id 
     cosmos_event["source"] = event.get("Source", "")
     cosmos_event["app_version"] = event.get("AppVersion", "")
     cosmos_event["platform"] = event.get("Platform", "")
@@ -145,7 +146,7 @@ def process_event(event: dict) -> bool:
     cosmos_event["timestamp"] = event.get("Timestamp", "")
     cosmos_event["response_code"] = event.get("Response Code", "")
     cosmos_event["loan_amount"] = event.get("LoanAmount", "")
-    cosmos_event["id"] = correlation_id
+    cosmos_event["correlation_id"] = correlation_id
     cosmos_event["received_at_ist"] = received_at_ist
     cosmos_event["received_at_utc"] = received_at_utc
 

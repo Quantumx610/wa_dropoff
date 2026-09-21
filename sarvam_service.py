@@ -94,7 +94,6 @@ class SarvamService:
             return
 
         dict_rows = rows.to_dict(orient="records")
-
         # --- PRE-INCREMENT & RECHURN EVALUATION ---
         try:
             cls._logger.info(f"Pre-incrementing call_count for {len(all_cids)} CIDs")
@@ -106,6 +105,7 @@ class SarvamService:
             )
 
             limit_query = f"""
+                UPDATE wa_dropoff 
                 UPDATE wa_dropoff 
                 SET is_processed = True 
                 WHERE correlation_id IN %s 
