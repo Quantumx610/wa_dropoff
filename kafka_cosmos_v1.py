@@ -21,6 +21,15 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
+
+
+# Suppress verbose Azure HTTP logs
+logging.getLogger("azure.cosmos._cosmos_http_logging_policy").setLevel(logging.WARNING)
+logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+
+# (Optional) Broadly silence all non-critical Azure logs
+logging.getLogger("azure").setLevel(logging.WARNING)
+
 logger = logging.getLogger("EventProcessor")
 
 load_dotenv()
@@ -116,26 +125,29 @@ def process_event(event: dict) -> bool:
     received_at_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
     event["id"] = correlation_id
+    event["correlation_id"] = correlation_id
     event["received_at_ist"] = received_at_ist
     event["received_at_utc"] = received_at_utc
 
     # Step 1: Input Log
     insert_input_log(event)
 
-    mobile_no = event.get("MobileNumber", None)
-    event_name = event.get("EventName", None)
-    enquiry_id = event.get("Enquiry_ID", None)
+    mobile_no = event.get("MobileNumber", "")
+    event_name = event.get("EventName", "")
+    enquiry_id = event.get("Enquiry_ID", "")
 
     if not mobile_no or not event_name or not enquiry_id :
         logger.warning("Exit: Event missing critical fields: mobile_no or event_name or enquiry_id. ")
         return False
 
     cosmos_event = {}
-    cosmos_event["id"] = correlation_id 
+    cosmos_event["id"] = correlation_id
     cosmos_event["source"] = event.get("Source", "")
     cosmos_event["app_version"] = event.get("AppVersion", "")
     cosmos_event["platform"] = event.get("Platform", "")
     cosmos_event["os"] = event.get("OS", "")
+    cosmos_event["enquiry_id"] = event.get("enquiry_id", "")
+    cosmos_event["superapp_id"] = event.get("superapp_id", "")
     cosmos_event["journey"] = event.get("journey", "")
     cosmos_event["event_name"] = event.get("EventName", "")
     cosmos_event["mobile_no"] = event.get("MobileNumber", "")
@@ -146,6 +158,7 @@ def process_event(event: dict) -> bool:
     cosmos_event["timestamp"] = event.get("Timestamp", "")
     cosmos_event["response_code"] = event.get("Response Code", "")
     cosmos_event["loan_amount"] = event.get("LoanAmount", "")
+    cosmos_event["correlation_id"] = correlation_id
     cosmos_event["received_at_ist"] = received_at_ist
     cosmos_event["received_at_utc"] = received_at_utc
 
@@ -168,6 +181,9 @@ def process_event(event: dict) -> bool:
         "customer_name": event.get("customerName", "Priya Grahak"),
         "loan_amount": event.get("LoanAmount", "NA"),
         "loan_tenure": event.get("Tenure", "NA"),
+        "enquiry_id": event.get("enquiry_id", ""),
+        "superapp_id": event.get("superapp_id", ""),
+        "event_timestamp":event.get("event_timestamp",""),
         "mobile_no": mobile_no,
         "event_name": event_name,
         "received_at_ist": received_at_ist,
@@ -180,14 +196,11 @@ def process_event(event: dict) -> bool:
         return True
 
     existing_record = dict(records[0])
-
-    if existing_record.get("is_processed") is True:
+    call_count = existing_record.get("call_count") or 0
+    if existing_record.get("is_processed") is True or call_count >= SARVAM_TOTAL_ATTEMPTS:
+        if call_count >= 3:
+            logger.info(f"Skipping {mobile_no}: call_count>=3")
         logger.info(f"Skipping {mobile_no}: Record already processed.")
-        return False
-    
-    if existing_record.get("call_count") >= SARVAM_TOTAL_ATTEMPTS:
-        logger.info(f"Skipping {mobile_no}: Record reached max attempts: {SARVAM_TOTAL_ATTEMPTS}.")
-        return False
 
     if existing_record.get("event_name") == event_name:
         logger.info(f"Skipping {mobile_no}: Event name unchanged.")

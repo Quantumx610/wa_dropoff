@@ -126,12 +126,13 @@ def process_event(event: dict) -> bool:
 
     mobile_no = event.get("MobileNumber", "")
     event_name = event.get("EventName", "")
+    enquiry_id = event.get("enquiry_id", "")
     display_mobile = mobile_no if mobile_no else "UNKNOWN"
 
-    if not mobile_no or not event_name:
+    if not mobile_no or not event_name or not enquiry_id:
         logger.warning(f"Exit: Event missing critical fields. Mobile: {display_mobile}")
         stats["skipped_missing_fields"] += 1
-        stats["skip_reasons"].append((display_mobile, "Missing mobile_no or event_name"))
+        stats["skip_reasons"].append((display_mobile, "Missing mobile_no or event_name or enquiry_id"))
         return False
 
     cosmos_event = {}
@@ -140,6 +141,8 @@ def process_event(event: dict) -> bool:
     cosmos_event["app_version"] = event.get("AppVersion", "")
     cosmos_event["platform"] = event.get("Platform", "")
     cosmos_event["os"] = event.get("OS", "")
+    cosmos_event["enquiry_id"] = event.get("enquiry_id", "")
+    cosmos_event["superapp_id"] = event.get("superapp_id", "")
     cosmos_event["journey"] = event.get("journey", "")
     cosmos_event["event_name"] = event.get("EventName", "")
     cosmos_event["mobile_no"] = event.get("MobileNumber", "")
@@ -174,6 +177,9 @@ def process_event(event: dict) -> bool:
         "customer_name": event.get("customerName", "Priya Grahak"),
         "loan_amount": event.get("LoanAmount", "NA"),
         "loan_tenure": event.get("Tenure", "NA"),
+        "enquiry_id": event.get("enquiry_id", ""),
+        "superapp_id": event.get("superapp_id", ""),
+        "event_timestamp":event.get("event_timestamp",""),
         "mobile_no": mobile_no,
         "event_name": event_name,
         "received_at_ist": received_at_ist,
@@ -187,10 +193,10 @@ def process_event(event: dict) -> bool:
         return True
 
     existing_record = dict(records[0])
-
-    if existing_record.get("is_processed") is True or existing_record.get("call_count")>=3:
-        if existing_record.get("call_count")>=3:
-            logger.info(f"Skipping {mobile_no}: call_count>=3 ")
+    call_count = existing_record.get("call_count") or 0
+    if existing_record.get("is_processed") is True or call_count >= 3:
+        if call_count >= 3:
+            logger.info(f"Skipping {mobile_no}: call_count>=3")
         logger.info(f"Skipping {mobile_no}: Record already processed.")
         stats["skipped_pg_processed"] += 1
         stats["skip_reasons"].append((display_mobile, "Postgres: Record already processed"))
@@ -221,8 +227,10 @@ def map_csv_row_to_event(csv_row: dict) -> dict:
     return {
         "MobileNumber": csv_row.get("mobile_no", ""),
         "EventName": csv_row.get("event_name", ""),
+        "enquiry_id": csv_row.get("enquiry_id", ""),
         "Source": csv_row.get("source", ""),
         "LoanAmount": csv_row.get("loan_amount", ""),
+        "superapp_id": csv_row.get("superapp_id", ""),
         "Tenure": csv_row.get("loan_tenure", ""),
         "customerName": csv_row.get("customer_name", ""),
         "Timestamp": csv_row.get("event_timestamp", ""),
@@ -307,11 +315,11 @@ try:
                 stats["skip_reasons"].append((mobile_no, f"Source not SUPERAPP ({source})"))
             
             if running:
-                logger.info("Sleeping for 10 seconds...\n")
+                logger.info("Sleeping for 1 seconds...\n")
                 for _ in range(1):
                     if not running:
                         break
-                    time.sleep(1)
+                    time.sleep(0.1) #TODO change to 10
 
     logger.info("Finished reading all rows in the CSV file.")
 

@@ -1,6 +1,7 @@
 import socket
 
-host = "b-1.sitmskcluster.cymah8.c4.kafka.ap-south-1.amazonaws.com"
+# host = "b-1.sitmskcluster.cymah8.c4.kafka.ap-south-1.amazonaws.com"
+host= "b-2.sitmskcluster.cymah8.c4.kafka.ap-south-1.amazonaws.com"
 port = 9096
 
 try:

@@ -23,6 +23,7 @@ org_id = os.getenv('SARVAM_ORG_ID')
 app_id = os.getenv('SARVAM_APP_ID')
 workspace_id = os.getenv('SARVAM_WORKSPACE_ID')
 db_env = os.getenv('CONFIG')
+calling_delay = os.getenv('CALLING_DELAY')
 
 postgres_db_api = PostgresDatabaseAPI(db_env)
 
@@ -35,10 +36,10 @@ def calling_job():
 
     postgres_db_api = PostgresDatabaseAPI("uat")
 
-    ten_minutes_before = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    n_minutes_before = (datetime.now(timezone.utc) - timedelta(minutes=calling_delay)).isoformat()
 
     records = postgres_db_api.read(
-        "wa_dropoff", filters={"call_triggered": False, "is_processed": False, "is_connected": False, "call_count": {"op": "<", "val": str(total_attempts)}, "created_at": {"op": "<", "val": ten_minutes_before}, "updated_at": {"op": "<", "val": ten_minutes_before}}
+        "wa_dropoff", filters={"call_triggered": False, "is_processed": False, "is_connected": False, "call_count": {"op": "<", "val": str(total_attempts)}, "created_at": {"op": "<", "val": n_minutes_before}, "updated_at": {"op": "<", "val": n_minutes_before}}
     )
 
     if not records:
