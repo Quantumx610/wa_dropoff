@@ -16,6 +16,9 @@ logging.basicConfig(
         # logging.FileHandler("logs/scheduler.log")
     ]
 )
+logging.getLogger("azure.cosmos._cosmos_http_logging_policy").setLevel(logging.WARNING)
+logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
+
 logger = logging.getLogger("APSchedulerMain")
 
 
@@ -34,7 +37,7 @@ def start_scheduler():
 
     scheduler.add_job(
         get_interactions,
-        trigger=IntervalTrigger(seconds=40),
+        trigger=IntervalTrigger(seconds=30),
         id="get_interactions",
         name="get_interactions",
         replace_existing=True,
