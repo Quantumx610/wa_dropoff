@@ -38,8 +38,8 @@ COSMOS_ENDPOINT = os.getenv("COSMOS_ENDPOINT")
 COSMOS_KEY = os.getenv("COSMOS_KEY")
 COSMOS_DATABASE = os.getenv("COSMOS_DATABASE")
 
-COSMOS_LOG_CONTAINER = "kafka_input_log"
-COSMOS_DEDUPE_CONTAINER = "kafka_dedupe_log"
+COSMOS_LOG_CONTAINER = os.getenv("COSMOS_LOG_CONTAINER")
+COSMOS_DEDUPE_CONTAINER = os.getenv("COSMOS_DEDUPE_CONTAINER")
 
 DB_ENV = os.getenv("CONFIG", "uat")
 CSV_FILE_PATH = os.getenv("CSV_FILE_PATH", "dummy_data.csv") 
@@ -124,9 +124,9 @@ def process_event(event: dict) -> bool:
     insert_input_log(event)
     stats["cosmos_input_inserted"] += 1
 
-    mobile_no = event.get("MobileNumber", "")
-    event_name = event.get("EventName", "")
-    enquiry_id = event.get("enquiry_id", "")
+    mobile_no = event.get("MobileNumber", None)
+    event_name = event.get("EventName", None)
+    enquiry_id = event.get("EnquiryNo", None)
     display_mobile = mobile_no if mobile_no else "UNKNOWN"
 
     if not mobile_no or not event_name or not enquiry_id:
@@ -137,22 +137,26 @@ def process_event(event: dict) -> bool:
 
     cosmos_event = {}
     cosmos_event["id"] = correlation_id
-    cosmos_event["source"] = event.get("Source", "")
-    cosmos_event["app_version"] = event.get("AppVersion", "")
-    cosmos_event["platform"] = event.get("Platform", "")
-    cosmos_event["os"] = event.get("OS", "")
-    cosmos_event["enquiry_id"] = event.get("enquiry_id", "")
-    cosmos_event["superapp_id"] = event.get("superapp_id", "")
-    cosmos_event["journey"] = event.get("journey", "")
-    cosmos_event["event_name"] = event.get("EventName", "")
-    cosmos_event["mobile_no"] = event.get("MobileNumber", "")
-    cosmos_event["customer_flag"] = event.get("CustomerFlag", "")
-    cosmos_event["ucic"] = event.get("UCIC", "")
-    cosmos_event["ucic_value"] = event.get("UCIC_VALUE", "")
-    cosmos_event["lan_verified"] = event.get("LAN_VERIFIED", "")
-    cosmos_event["timestamp"] = event.get("Timestamp", "")
-    cosmos_event["response_code"] = event.get("Response Code", "")
-    cosmos_event["loan_amount"] = event.get("LoanAmount", "")
+    cosmos_event["source"] = event.get("Source", None)
+    cosmos_event["app_version"] = event.get("AppVersion", None)
+    cosmos_event["platform"] = event.get("Platform", None)
+    cosmos_event["application_id"] = event.get("Application_ID", None)
+    cosmos_event["hpa"] = event.get("HPA", None)
+    cosmos_event["mandate_mode"] = event.get("MandateMode", None)
+    cosmos_event["penny_drop_failure_reason"] = event.get("PennyDropFailureReason", None)
+    cosmos_event["offer"] = event.get("Offer", None)
+    cosmos_event["enquiry_id"] = event.get("EnquiryNo", None)
+    cosmos_event["superapp_id"] = event.get("SuperAppid", None)
+    cosmos_event["journey"] = event.get("Journey", None)
+    cosmos_event["event_name"] = event.get("EventName", None)
+    cosmos_event["mobile_no"] = event.get("MobileNumber", None)
+    cosmos_event["customer_flag"] = event.get("CustomerFlag", None)
+    cosmos_event["ucic"] = event.get("UCIC", None)
+    cosmos_event["ucic_value"] = event.get("UCIC_VALUE", None)
+    cosmos_event["lan_verified"] = event.get("LAN_VERIFIED", None)
+    cosmos_event["timestamp"] = event.get("Timestamp", None)
+    cosmos_event["response_code"] = event.get("Response Code", None)
+    cosmos_event["loan_amount"] = event.get("LoanAmount", None)
     cosmos_event["correlation_id"] = correlation_id
     cosmos_event["received_at_ist"] = received_at_ist
     cosmos_event["received_at_utc"] = received_at_utc
@@ -170,22 +174,63 @@ def process_event(event: dict) -> bool:
 
     # Step 4: PostgreSQL Calling Ledger
     records = postgres_db_api.read("wa_dropoff", filters={"mobile_no": mobile_no})
+#     pg_schema = [
+#     "correlation_id",
+#     "source",
+#     "customer_name",
+#     "offer",
+#     "loan_amount",
+#     "loan_tenure",
+#     "enquiry_id",
+#     "superapp_id",
+#     "event_timestamp",
+#     "pennydropfailurereason",
+#     "mandate_mode",
+#     "application_id",
+#     "hpa",
+#     "mobile_no",
+#     "event_name",
+#     "received_at_ist",
+#     "received_at_utc"
+# ]
 
     pg_payload = {
         "correlation_id": correlation_id,
-        "source": event.get("Source", "NA"),
-        "customer_name": event.get("customerName", "Priya Grahak"),
-        "loan_amount": event.get("LoanAmount", "NA"),
-        "loan_tenure": event.get("Tenure", "NA"),
-        "enquiry_id": event.get("enquiry_id", ""),
-        "superapp_id": event.get("superapp_id", ""),
-        "event_timestamp":event.get("event_timestamp",""),
+        "source": event.get("Source", None),
+        "customer_name": event.get("Name", "Priya Grahak"),
+        "offer":event.get("Offer", None),
+        "loan_amount": event.get("LoanAmount", None),
+        "loan_tenure": event.get("Tenure", None),
+        "enquiry_id": event.get("EnquiryNo", None),
+        "superapp_id": event.get("SuperAppid", None),
+        "event_timestamp":event.get("Timestamp",None),
+        "pennydropfailurereason":event.get("PennyDropFailureReason",None),
+        "mandate_mode": event.get("MandateMode", None),
+        "application_id": event.get("Application_ID", None),
+        "hpa" : event.get("HPA", None),
         "mobile_no": mobile_no,
         "event_name": event_name,
         "received_at_ist": received_at_ist,
         "received_at_utc": received_at_utc
     }
 
+    if event_name in ["CheckChildFailure", "JourneyCompleted", "PennyDropFailure", "AMLCheckFailure"]:
+        # Add the is_processed flag to the payload before inserting
+        if not records:
+            pg_payload["is_processed"] = True     
+            postgres_db_api.insert("wa_dropoff", pg_payload)
+            logger.info(f"User reached failure or completion for mobile no {mobile_no}.")
+            stats["pg_inserted"] += 1
+            return True
+            
+        else:
+            postgres_db_api.update(table_name="wa_dropoff",
+                            update_data={"event_name": event_name, "call_triggered": False, "is_processed": True},
+                            filters={"mobile_no": mobile_no})
+            logger.info(f"Updated drop-off record for {mobile_no} with event {event_name}, and completed the journey")
+            stats["pg_updated"] += 1
+            return True
+        
     if not records:
         postgres_db_api.insert("wa_dropoff", pg_payload)
         logger.info(f"Created new drop-off record for {mobile_no}.")
@@ -208,13 +253,13 @@ def process_event(event: dict) -> bool:
         stats["skipped_pg_unchanged"] += 1
         stats["skip_reasons"].append((display_mobile, "Postgres: Event name unchanged"))
         return False
-
-    # Update state for changed event
+   
+    
     postgres_db_api.update(
-        table_name="wa_dropoff",
-        update_data={"event_name": event_name, "call_triggered": False},
-        filters={"mobile_no": mobile_no}
-    )
+    table_name="wa_dropoff",
+    update_data={"event_name": event_name, "call_triggered": False},
+    filters={"mobile_no": mobile_no}
+)
     logger.info(f"Updated drop-off record for {mobile_no} with event {event_name}.")
     stats["pg_updated"] += 1
     return True
@@ -225,18 +270,18 @@ def process_event(event: dict) -> bool:
 
 def map_csv_row_to_event(csv_row: dict) -> dict:
     return {
-        "MobileNumber": csv_row.get("mobile_no", ""),
-        "EventName": csv_row.get("event_name", ""),
-        "enquiry_id": csv_row.get("enquiry_id", ""),
-        "Source": csv_row.get("source", ""),
-        "LoanAmount": csv_row.get("loan_amount", ""),
-        "superapp_id": csv_row.get("superapp_id", ""),
-        "Tenure": csv_row.get("loan_tenure", ""),
-        "customerName": csv_row.get("customer_name", ""),
-        "Timestamp": csv_row.get("event_timestamp", ""),
-        "AppVersion": "", "Platform": "", "OS": "", "journey": "",
-        "CustomerFlag": "", "UCIC": "", "UCIC_VALUE": "",
-        "LAN_VERIFIED": "", "Response Code": ""
+        "MobileNumber": csv_row.get("mobile_no", None),
+        "EventName": csv_row.get("event_name", None),
+        "EnquiryNo": csv_row.get("enquiry_id", None),
+        "Source": csv_row.get("source", None),
+        "LoanAmount": csv_row.get("loan_amount", None),
+        "SuperAppid": csv_row.get("superapp_id", None),
+        "Tenure": csv_row.get("loan_tenure", None),
+        "Name": csv_row.get("customer_name", None),
+        "Timestamp": csv_row.get("event_timestamp", None),
+        "AppVersion": None, "Platform": None, "OS": None, "journey": None,
+        "CustomerFlag": None, "UCIC": None, "UCIC_VALUE": None,
+        "LAN_VERIFIED": None, "Response Code": None
     }
 
 def print_summary():

@@ -134,7 +134,7 @@ def process_event(event: dict) -> bool:
 
     mobile_no = event.get("MobileNumber", "")
     event_name = event.get("EventName", "")
-    enquiry_id = event.get("Enquiry_ID", "")
+    enquiry_id = event.get("EnquiryNo", "")
 
     if not mobile_no or not event_name or not enquiry_id :
         logger.warning("Exit: Event missing critical fields: mobile_no or event_name or enquiry_id. ")
@@ -145,10 +145,14 @@ def process_event(event: dict) -> bool:
     cosmos_event["source"] = event.get("Source", "")
     cosmos_event["app_version"] = event.get("AppVersion", "")
     cosmos_event["platform"] = event.get("Platform", "")
-    cosmos_event["os"] = event.get("OS", "")
-    cosmos_event["enquiry_id"] = event.get("enquiry_id", "")
-    cosmos_event["superapp_id"] = event.get("superapp_id", "")
-    cosmos_event["journey"] = event.get("journey", "")
+    cosmos_event["application_id"] = event.get("Application_ID", "")
+    cosmos_event["hpa"] = event.get("HPA", "")
+    cosmos_event["mandate_mode"] = event.get("MandateMode", "")
+    cosmos_event["penny_drop_failure_reason"] = event.get("PennyDropFailureReason", "")
+    cosmos_event["offer"] = event.get("Offer", "")
+    cosmos_event["enquiry_id"] = event.get("EnquiryNo", "")
+    cosmos_event["superapp_id"] = event.get("SuperAppid", "")
+    cosmos_event["journey"] = event.get("Journey", "")
     cosmos_event["event_name"] = event.get("EventName", "")
     cosmos_event["mobile_no"] = event.get("MobileNumber", "")
     cosmos_event["customer_flag"] = event.get("CustomerFlag", "")
@@ -178,12 +182,12 @@ def process_event(event: dict) -> bool:
     pg_payload = {
         "correlation_id": correlation_id,
         "source": event.get("Source", "NA"),
-        "customer_name": event.get("customerName", "Priya Grahak"),
+        "customer_name": event.get("Name", "Priya Grahak"),
         "loan_amount": event.get("LoanAmount", "NA"),
         "loan_tenure": event.get("Tenure", "NA"),
-        "enquiry_id": event.get("enquiry_id", ""),
-        "superapp_id": event.get("superapp_id", ""),
-        "event_timestamp":event.get("event_timestamp",""),
+        "enquiry_id": event.get("EnquiryNo", ""),
+        "superapp_id": event.get("SuperAppid", ""),
+        "event_timestamp":event.get("Timestamp",""),
         "mobile_no": mobile_no,
         "event_name": event_name,
         "received_at_ist": received_at_ist,

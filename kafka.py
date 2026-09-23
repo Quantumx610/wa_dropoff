@@ -1,14 +1,19 @@
 from confluent_kafka import Consumer, KafkaError
-
+import os
 from cosmosdb_api import CosmosDatabaseAPI
+from dotenv import load_dotenv
 
+load_dotenv()
+
+KAFKA_PASSWORD_UAT = os.getenv("KAFKA_PASSWORD_UAT")
+KAFKA_PASSWORD_SIT = os.getenv("KAFKA_PASSWORD_SIT")
 # 1. Define the Kafka consumer configuration
 conf = {
     'bootstrap.servers': 'b-1.sitmskcluster.cymah8.c4.kafka.ap-south-1.amazonaws.com:9096,b-2.sitmskcluster.cymah8.c4.kafka.ap-south-1.amazonaws.com:9096',
     'security.protocol': 'SASL_SSL',
     'sasl.mechanism': 'SCRAM-SHA-512',
     'sasl.username': 'mmfsl-dna-sit',
-    'sasl.password': 'ahbm&V,2!L$3!9q', 
+    'sasl.password': KAFKA_PASSWORD_SIT, 
     'group.id': 'superAppEvents-python-group', # Required for standard Python consumers
     'auto.offset.reset': 'latest'              # Equivalent to startingOffsets="latest"
 }
