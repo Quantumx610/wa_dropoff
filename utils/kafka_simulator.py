@@ -8,8 +8,7 @@ import sys
 import time
 from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
-from cosmosdb_api import CosmosDatabaseAPI
-from postgres_api import PostgresDatabaseAPI
+from db import get_postgres_connection, get_cosmos_connection
 from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -44,17 +43,8 @@ COSMOS_DEDUPE_CONTAINER = os.getenv("COSMOS_DEDUPE_CONTAINER")
 DB_ENV = os.getenv("CONFIG", "uat")
 CSV_FILE_PATH = os.getenv("CSV_FILE_PATH", "dummy_data.csv") 
 
-try:
-    cosmos_db_api = CosmosDatabaseAPI(
-        url=COSMOS_ENDPOINT, 
-        key=COSMOS_KEY, 
-        db_name=COSMOS_DATABASE
-    )
-    postgres_db_api = PostgresDatabaseAPI(DB_ENV)
-    logger.info("Cosmos DB and PostgreSQL connections initialized successfully.")
-except Exception as e:
-    logger.critical(f"Database initialization failure: {e}", exc_info=True)
-    sys.exit(1)
+cosmos_db_api = get_cosmos_connection()
+postgres_db_api = get_postgres_connection()
 
 # ============================================================
 # 2. TRACKING STATS DICTIONARY
@@ -204,7 +194,7 @@ def process_event(event: dict) -> bool:
         "enquiry_id": event.get("EnquiryNo", None),
         "superapp_id": event.get("SuperAppid", None),
         "event_timestamp":event.get("Timestamp",None),
-        "pennydropfailurereason":event.get("PennyDropFailureReason",None),
+        "penny_drop_failure_reason":event.get("PennyDropFailureReason",None),
         "mandate_mode": event.get("MandateMode", None),
         "application_id": event.get("Application_ID", None),
         "hpa" : event.get("HPA", None),

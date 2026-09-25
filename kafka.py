@@ -1,6 +1,6 @@
 from confluent_kafka import Consumer, KafkaError
 import os
-from cosmosdb_api import CosmosDatabaseAPI
+from db import get_cosmos_connection
 from dotenv import load_dotenv
 
 load_dotenv()

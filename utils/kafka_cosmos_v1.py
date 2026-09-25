@@ -7,8 +7,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from confluent_kafka import Consumer, KafkaError
 from dotenv import load_dotenv
-from cosmosdb_api import CosmosDatabaseAPI
-from postgres_api import PostgresDatabaseAPI
+from db import get_postgres_connection, get_cosmos_connection
 from zoneinfo import ZoneInfo
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -49,12 +48,8 @@ DB_ENV = os.getenv("FLASK_CONFIG", "uat")
 SARVAM_TOTAL_ATTEMPTS = os.getenv("SARVAM_TOTAL_ATTEMPTS")
 
 try:
-    cosmos_db_api = CosmosDatabaseAPI(
-        url=COSMOS_ENDPOINT, 
-        key=COSMOS_KEY, 
-        db_name=COSMOS_DATABASE
-    )
-    postgres_db_api = PostgresDatabaseAPI(DB_ENV)
+    cosmos_db_api = get_cosmos_connection()
+    postgres_db_api = get_postgres_connection()
     logger.info("Cosmos DB and PostgreSQL connections initialized successfully.")
 except Exception as e:
     logger.critical(f"Database initialization failure: {e}", exc_info=True)

@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from limits import parse, strategies
 from limits.storage import MemoryStorage
 import pandas as pd
-from postgres_api import PostgresDatabaseAPI
+from db import get_postgres_connection
 
 storage = MemoryStorage()
 limiter = strategies.MovingWindowRateLimiter(storage)
@@ -14,7 +14,7 @@ SARVAM_LIMIT = parse("200 per 1 minute")
 
 load_dotenv()
 env = os.getenv("CONFIG", "uat")
-db_api = PostgresDatabaseAPI(env)
+db_api = get_postgres_connection()
 total_attempts = int(os.getenv("SARVAM_TOTAL_ATTEMPTS", 3))
 
 default_logger = logging.getLogger(__name__)
