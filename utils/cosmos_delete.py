@@ -8,13 +8,12 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 from confluent_kafka import Consumer, KafkaError
 from dotenv import load_dotenv
-from cosmosdb_api import CosmosDatabaseAPI
-from postgres_api import PostgresDatabaseAPI
+from db import get_cosmos_connection, get_postgres_connection
 from zoneinfo import ZoneInfo
 
 load_dotenv()
 
-db_api = CosmosDatabaseAPI(url=os.getenv("COSMOS_ENDPOINT"), key=os.getenv("COSMOS_KEY"), db_name=os.getenv("COSMOS_DATABASE"))
+db_api = get_cosmos_connection(url=os.getenv("COSMOS_ENDPOINT"), key=os.getenv("COSMOS_KEY"), db_name=os.getenv("COSMOS_DATABASE"))
 
 # 2. Define your container names
 COSMOS_LOG_CONTAINER = "kafka_input_log"

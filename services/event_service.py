@@ -15,7 +15,6 @@ COSMOS_DEDUPE_CONTAINER = os.getenv("COSMOS_DEDUPE_CONTAINER", "kafka_dedupe_log
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
-
 # ==========================================
 # PIPELINE BUSINESS LOGIC
 # ==========================================

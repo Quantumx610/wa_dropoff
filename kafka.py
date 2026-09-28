@@ -4,7 +4,8 @@ from db import get_cosmos_connection
 from dotenv import load_dotenv
 
 load_dotenv()
-
+KAFKA_USERNAME_SIT = os.getenv("KAFKA_USERNAME_SIT")
+KAFKA_USERNAME_UAT = os.getenv("KAFKA_USERNAME_UAT")
 KAFKA_PASSWORD_UAT = os.getenv("KAFKA_PASSWORD_UAT")
 KAFKA_PASSWORD_SIT = os.getenv("KAFKA_PASSWORD_SIT")
 # 1. Define the Kafka consumer configuration
@@ -12,10 +13,11 @@ conf = {
     'bootstrap.servers': 'b-1.sitmskcluster.cymah8.c4.kafka.ap-south-1.amazonaws.com:9096,b-2.sitmskcluster.cymah8.c4.kafka.ap-south-1.amazonaws.com:9096',
     'security.protocol': 'SASL_SSL',
     'sasl.mechanism': 'SCRAM-SHA-512',
-    'sasl.username': 'mmfsl-dna-sit',
+    'sasl.username': KAFKA_USERNAME_SIT,
     'sasl.password': KAFKA_PASSWORD_SIT, 
-    'group.id': 'superAppEvents-python-group', # Required for standard Python consumers
-    'auto.offset.reset': 'latest'              # Equivalent to startingOffsets="latest"
+    'group.id': 'superapp-cosmos-writer-group', # Required for standard Python consumers
+    'auto.offset.reset': 'latest',              # Equivalent to startingOffsets="latest"
+    # 'debug': 'broker,security,protocol'
 }
 
 # 2. Initialize the Consumer
@@ -69,25 +71,3 @@ except KeyboardInterrupt:
 finally:
     # Clean up and commit final offsets
     consumer.close()
-
-
-# import os
-# from dotenv import load_dotenv
-# load_dotenv()
-# cosmos_db_manager = CosmosDatabaseAPI(
-#     url=os.getenv("COSMOS_ENDPOINT"),
-#     key=os.getenv("COSMOS_KEY"),
-#     # db_name=os.getenv("COSMOS_DB_NAME"),
-#     db_name="testdb"
-# )
-
-# event = {
-#     "event_name": "test",
-#     "event_type": "ABC",
-#     "source": "VMSandbox-44",
-#     "created_by": "100008239"
-# }
-
-# event_inserted = cosmos_db_manager.dbInsert("kafka-superapp-events", event)
-
-# print("Event Inserted: ", event_inserted)
