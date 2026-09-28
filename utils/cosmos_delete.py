@@ -1,26 +1,17 @@
-import json
-import uuid
-import logging
-import os
-import signal
-import sys
-import pandas as pd
-from datetime import datetime, timedelta, timezone
-from confluent_kafka import Consumer, KafkaError
+
 from dotenv import load_dotenv
-from db import get_cosmos_connection, get_postgres_connection
+from db import get_cosmos_connection
 from zoneinfo import ZoneInfo
 
 load_dotenv()
 
-db_api = get_cosmos_connection(url=os.getenv("COSMOS_ENDPOINT"), key=os.getenv("COSMOS_KEY"), db_name=os.getenv("COSMOS_DATABASE"))
-
+cosmos_db_api = get_cosmos_connection()
 # 2. Define your container names
 COSMOS_LOG_CONTAINER = "kafka_input_log"
 COSMOS_DEDUPE_CONTAINER = "kafka_dedupe_log"
 # 2. Fetch all items in the container
 # Note: You can optimize by only selecting the id and partition key
-all_items = db_api.dbGet(COSMOS_LOG_CONTAINER, {})
+all_items = cosmos_db_api.dbGet(COSMOS_LOG_CONTAINER, {})
 
 if all_items:
     deleted_count = 0
@@ -32,7 +23,7 @@ if all_items:
         partition_key_value = item.get("id") 
         
         # 3. Call your dbDelete method for each item
-        success = db_api.dbDelete(
+        success = cosmos_db_api.dbDelete(
             container_name=COSMOS_LOG_CONTAINER, 
             item_id=item_id, 
             partition_key=partition_key_value
@@ -44,7 +35,7 @@ if all_items:
 else:
     print(f"Container {COSMOS_LOG_CONTAINER} is already empty.")
 
-all_items = db_api.dbGet(COSMOS_DEDUPE_CONTAINER, {})
+all_items = cosmos_db_api.dbGet(COSMOS_DEDUPE_CONTAINER, {})
 
 if all_items:
     deleted_count = 0
@@ -56,7 +47,7 @@ if all_items:
         partition_key_value = item.get("id") 
         
         # 3. Call your dbDelete method for each item
-        success = db_api.dbDelete(
+        success = cosmos_db_api.dbDelete(
             container_name=COSMOS_DEDUPE_CONTAINER, 
             item_id=item_id, 
             partition_key=partition_key_value

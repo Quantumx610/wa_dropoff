@@ -204,7 +204,7 @@ def process_event(event: dict) -> bool:
         "received_at_utc": received_at_utc
     }
 
-    if event_name in ["CheckChildFailure", "JourneyCompleted", "PennyDropFailure", "AMLCheckFailure"]:
+    if event_name in ["CheckChildFailure", "PLSuvidha_JourneyCompleted", "PennyDropFailure", "AMLCheckFailure"]:
         # Add the is_processed flag to the payload before inserting
         if not records:
             pg_payload["is_processed"] = True     
