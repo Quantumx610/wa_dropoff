@@ -13,7 +13,7 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC")
-KAFKA_PASSWORD = os.getenv("KAFKA_PASSWORD")
+KAFKA_PASSWORD = os.getenv("KAFKA_PASSWORD_SIT")
 
 
 class KafkaConsumer:
