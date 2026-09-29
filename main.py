@@ -2,8 +2,7 @@ import logging
 import threading
 from apscheduler.schedulers.blocking import BlockingScheduler
 from apscheduler.triggers.interval import IntervalTrigger
-from utils.kafka_cosmos_v1 import process_event
-from services import KafkaConsumer
+from services import KafkaConsumer, process_event
 from jobs import calling_eligible, get_interactions, push_rechurn_queue
 
 
