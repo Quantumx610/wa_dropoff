@@ -90,22 +90,24 @@ class SarvamService:
     @classmethod
     def process_batch(cls, rows: pd.DataFrame):
         cls._logger.info(f"Starting process_batch. Total rows: {len(rows)}")
-
+    
         all_cids = rows["correlation_id"].dropna().unique().tolist()
         if not all_cids:
-            return
-
+            return []
+    
         dict_rows = rows.to_dict(orient="records")
+    
         # --- PRE-INCREMENT & RECHURN EVALUATION ---
         try:
             cls._logger.info(f"Pre-incrementing call_count for {len(all_cids)} CIDs")
+    
             db_api.increment_bulk(
                 table_name="wa_dropoff",
                 column_to_inc="call_count",
                 where_col="correlation_id",
                 values_list=all_cids,
             )
-
+    
             limit_query = f"""
                 UPDATE wa_dropoff 
                 SET is_processed = True 
@@ -113,15 +115,17 @@ class SarvamService:
                 AND call_count >= {total_attempts}
                 AND is_processed = False
             """
+    
             db_api.execute_raw_query(limit_query, (tuple(all_cids),))
-
+    
         except Exception as e:
             cls._logger.error(f"Failed to pre-update Postgres: {e}")
-            return
-
+            return []
+    
         # --- EXECUTE API CALLS ---
-        journey_updates = []
-
+        db_updates = []
+        crm_updates = []
+    
         with ThreadPoolExecutor(max_workers=10) as executor:
             future_to_cid = {
                 executor.submit(
@@ -137,25 +141,35 @@ class SarvamService:
                 ): row["correlation_id"]
                 for row in dict_rows
             }
-
+    
             for future in as_completed(future_to_cid):
                 cid = future_to_cid[future]
+    
                 try:
                     success, result, _, enquiry_id, call_count = future.result()
-
-                    journey_updates.append(
+    
+                    db_updates.append(
                         {
                             "correlation_id": cid,
                             "sarvam_attempt_id": result if success else None,
                             "call_state": "success" if success else "failed",
                             "call_triggered": True,
-                            "enquiry_id": enquiry_id,
-                            "call_count": call_count
                         }
                     )
+    
+                    crm_updates.append(
+                        {
+                            "correlation_id": cid,
+                            "enquiry_id": enquiry_id,
+                            "call_count": call_count + 1,
+                            "call_state": "success" if success else "failed",
+                        }
+                    )
+    
                 except Exception as e:
                     cls._logger.error(f"Thread Exception for {cid}: {str(e)}")
-                    journey_updates.append(
+    
+                    db_updates.append(
                         {
                             "correlation_id": cid,
                             "sarvam_attempt_id": None,
@@ -163,13 +177,25 @@ class SarvamService:
                             "call_triggered": True,
                         }
                     )
-
+    
+                    crm_updates.append(
+                        {
+                            "correlation_id": cid,
+                            "enquiry_id": None,
+                            "call_count": None,
+                            "call_state": "failed",
+                        }
+                    )
+    
         # --- FINAL POSTGRES STATE COMMIT ---
-        if journey_updates:
+        if db_updates:
             db_api.update_bulk_mapped(
-                "wa_dropoff", journey_updates, "correlation_id"
+                "wa_dropoff",
+                db_updates,
+                "correlation_id",
             )
-
+    
         cls._logger.info("Batch processing complete.")
-        return journey_updates
+    
+        return crm_updates
         
