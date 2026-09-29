@@ -43,6 +43,7 @@ COSMOS_DEDUPE_CONTAINER = os.getenv("COSMOS_DEDUPE_CONTAINER")
 
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC")
 KAFKA_PASSWORD = os.getenv("KAFKA_PASSWORD")
+DB_ENV = os.getenv("CONFIG", "uat")
 DB_ENV = os.getenv("FLASK_CONFIG", "uat")
 
 SARVAM_TOTAL_ATTEMPTS = os.getenv("SARVAM_TOTAL_ATTEMPTS")
@@ -157,7 +158,6 @@ def process_event(event: dict) -> bool:
     cosmos_event["timestamp"] = event.get("Timestamp", "")
     cosmos_event["response_code"] = event.get("Response Code", "")
     cosmos_event["loan_amount"] = event.get("LoanAmount", "")
-    cosmos_event["correlation_id"] = correlation_id
     cosmos_event["received_at_ist"] = received_at_ist
     cosmos_event["received_at_utc"] = received_at_utc
 
