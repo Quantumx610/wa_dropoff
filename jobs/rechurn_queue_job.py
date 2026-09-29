@@ -61,7 +61,7 @@ def push_rechurn_queue() -> dict:
 
     # --- Part-2 : Atomic SQL Update for Rechurn Queue ---
     try:
-        thirty_mins_ago_utc = (datetime.now(timezone.utc) - timedelta(minutes=30)).replace(tzinfo=None)
+        thirty_mins_ago_utc = (datetime.now(timezone.utc) - timedelta(minutes=2)).replace(tzinfo=None)
 
         optimized_update_query = """
             UPDATE wa_dropoff AS wd

@@ -101,6 +101,7 @@ def get_interactions():
         less_10_min = (created_at - timedelta(minutes=10)).strftime(fmt)
 
         df_int = fetch_paginated_data("interactions", less_10_min)
+        df_att = fetch_paginated_data("attempts", less_10_min)
 
         if df_int.empty:
             logger.info("No attempts found from API.")

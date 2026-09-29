@@ -27,7 +27,7 @@ def start_scheduler():
 
     scheduler.add_job(
         calling_eligible,
-        trigger=IntervalTrigger(seconds=12),
+        trigger=IntervalTrigger(minutes=1),
         id="calling_job",
         name="calling_job",
         replace_existing=True,
@@ -36,7 +36,7 @@ def start_scheduler():
 
     scheduler.add_job(
         get_interactions,
-        trigger=IntervalTrigger(seconds=30),
+        trigger=IntervalTrigger(minutes=1),
         id="get_interactions",
         name="get_interactions",
         replace_existing=True,
@@ -46,7 +46,7 @@ def start_scheduler():
     # Fixed Duplicate ID and Name bug
     scheduler.add_job(
         push_rechurn_queue,
-        trigger=IntervalTrigger(seconds=30),
+        trigger=IntervalTrigger(minutes=1),
         id="push_rechurn_queue",
         name="push_rechurn_queue",
         replace_existing=True,
@@ -76,14 +76,14 @@ if __name__ == "__main__":
     logger = logging.getLogger("MainFile")
 
     # 2. Run Kafka Consumer in a background thread so BlockingScheduler can run
-    consumer_service = KafkaConsumer()
-    consumer_thread = threading.Thread(
-        target=consumer_service.start_listening,
-        kwargs={"handler_func": process_event},
-        daemon=True
-    )
-    consumer_thread.start()
-    logger.info("Kafka consumer started in background thread.")
+    # consumer_service = KafkaConsumer()
+    # consumer_thread = threading.Thread(
+    #     target=consumer_service.start_listening,
+    #     kwargs={"handler_func": process_event},
+    #     daemon=True
+    # )
+    # consumer_thread.start()
+    # logger.info("Kafka consumer started in background thread.")
 
     # 3. Start Scheduler loop
     start_scheduler()

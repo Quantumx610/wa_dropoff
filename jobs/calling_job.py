@@ -51,6 +51,8 @@ def calling_eligible():
 
         n_minutes_before = (datetime.now(timezone.utc) - timedelta(minutes=calling_delay)).isoformat()
 
+        print("n_minutes_before: ", n_minutes_before)
+
         records = postgres_db_api.read(
             "wa_dropoff",
             filters={
@@ -61,6 +63,8 @@ def calling_eligible():
                 "updated_at": {"op": "<", "val": n_minutes_before}
             }
         )
+
+        print("records: ", records)
 
         if not records:
             logger.info("No pending drop-off records to call.")
