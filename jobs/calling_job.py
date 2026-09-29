@@ -105,7 +105,16 @@ def calling_eligible():
     # Execute Sarvam Service Batch only if there are records to process
     if not validated_df.empty:
         try:
-            SarvamService.process_batch(validated_df)
+            crm_updates = SarvamService.process_batch(validated_df)
+            successful_records = [
+                row
+                for row in crm_updates
+                if row["call_state"] == "success"
+            ]
+            
+            if successful_records:
+                process_crm_enquiries(successful_records)
+
             job_logs["details"]["sarvam_service"] = "success"
         except Exception as e:
             job_logs["status"] = "PARTIAL_FAILURE" if job_logs["status"] == "SUCCESS" else "FAILED"
