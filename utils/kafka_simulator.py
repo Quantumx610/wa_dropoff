@@ -363,3 +363,5 @@ except Exception as e:
 finally:
     logger.info("CSV simulation safely stopped. Generating summary...")
     print_summary()
+
+# python -m utils.kafka_simulator

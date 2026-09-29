@@ -59,3 +59,5 @@ if all_items:
     print(f"Successfully deleted {deleted_count} items from {COSMOS_DEDUPE_CONTAINER}.")
 else:
     print(f"Container {COSMOS_DEDUPE_CONTAINER} is already empty.")
+
+# python -m utils.cosmos_delete
