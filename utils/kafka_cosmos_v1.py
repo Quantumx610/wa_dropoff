@@ -38,8 +38,8 @@ COSMOS_KEY = os.getenv("COSMOS_KEY")
 COSMOS_DATABASE = os.getenv("COSMOS_DATABASE")
 
 # Retained only the two required containers
-COSMOS_LOG_CONTAINER = "kafka_input_log"
-COSMOS_DEDUPE_CONTAINER = "kafka_dedupe_log"
+COSMOS_LOG_CONTAINER = os.getenv("COSMOS_LOG_CONTAINER")
+COSMOS_DEDUPE_CONTAINER = os.getenv("COSMOS_DEDUPE_CONTAINER")
 
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC")
 KAFKA_PASSWORD = os.getenv("KAFKA_PASSWORD")
@@ -66,13 +66,13 @@ kafka_conf = {
     'enable.auto.commit': False
 }
 
-# try:
-#     consumer = Consumer(kafka_conf)
-#     consumer.subscribe([KAFKA_TOPIC])
-#     logger.info(f"Kafka consumer subscribed to {KAFKA_TOPIC}.")
-# except Exception as e:
-#     logger.critical(f"Kafka connection failed: {e}", exc_info=True)
-#     sys.exit(1)
+try:
+    consumer = Consumer(kafka_conf)
+    consumer.subscribe([KAFKA_TOPIC])
+    logger.info(f"Kafka consumer subscribed to {KAFKA_TOPIC}.")
+except Exception as e:
+    logger.critical(f"Kafka connection failed: {e}", exc_info=True)
+    sys.exit(1)
 
 # ============================================================
 # 2. BUSINESS LOGIC & HELPERS
@@ -175,19 +175,39 @@ def process_event(event: dict) -> bool:
     # Step 4: is_processed = True for this particular mobile_no
 
     pg_payload = {
-        "correlation_id": correlation_id,
-        "source": event.get("Source", "NA"),
-        "customer_name": event.get("Name", "Priya Grahak"),
-        "loan_amount": event.get("LoanAmount", "NA"),
-        "loan_tenure": event.get("Tenure", "NA"),
-        "enquiry_id": event.get("EnquiryNo", ""),
-        "superapp_id": event.get("SuperAppid", ""),
-        "event_timestamp":event.get("Timestamp",""),
-        "mobile_no": mobile_no,
-        "event_name": event_name,
-        "received_at_ist": received_at_ist,
-        "received_at_utc": received_at_utc
-    }
+            "correlation_id": correlation_id,
+            "source": event.get("Source", None),
+            "customer_name": event.get("Name", "Priya Grahak"),
+            "offer":event.get("Offer", None),
+            "loan_amount": event.get("LoanAmount", None),
+            "loan_tenure": event.get("Tenure", None),
+            "enquiry_id": event.get("EnquiryNo", None),
+            "superapp_id": event.get("SuperAppid", None),
+            "event_timestamp":event.get("Timestamp",None),
+            "penny_drop_failure_reason":event.get("PennyDropFailureReason",None),
+            "mandate_mode": event.get("MandateMode", None),
+            "application_id": event.get("Application_ID", None),
+            "hpa" : event.get("HPA", None),
+            "mobile_no": mobile_no,
+            "event_name": event_name,
+            "received_at_ist": received_at_ist,
+            "received_at_utc": received_at_utc
+        }
+
+    if event_name in ["PLSuvidha_CheckChildFailure", "PLSuvidha_JourneyCompleted", "PLSuvidha_PennyDropFailure", "PLSuvidha_AMLCheckFailure"]:
+            # Add the is_processed flag to the payload before inserting
+            if not records:
+                pg_payload["is_processed"] = True     
+                postgres_db_api.insert("wa_dropoff", pg_payload)
+                logger.info(f"User reached failure or completion for mobile no {mobile_no}.")
+                return True
+                
+            else:
+                postgres_db_api.update(table_name="wa_dropoff",
+                                update_data={"event_name": event_name, "call_triggered": False, "is_processed": True},
+                                filters={"mobile_no": mobile_no})
+                logger.info(f"Updated drop-off record for {mobile_no} with event {event_name}, and completed the journey")
+                return True
 
     if not records:
         postgres_db_api.insert("wa_dropoff", pg_payload)
@@ -197,8 +217,8 @@ def process_event(event: dict) -> bool:
     existing_record = dict(records[0])
     call_count = existing_record.get("call_count") or 0
     if existing_record.get("is_processed") is True or call_count >= SARVAM_TOTAL_ATTEMPTS:
-        if call_count >= 3:
-            logger.info(f"Skipping {mobile_no}: call_count>=3")
+        if call_count >= SARVAM_TOTAL_ATTEMPTS:
+            logger.info(f"Skipping {mobile_no}: call_count>={SARVAM_TOTAL_ATTEMPTS}")
         logger.info(f"Skipping {mobile_no}: Record already processed.")
 
     if existing_record.get("event_name") == event_name:
@@ -217,48 +237,47 @@ def process_event(event: dict) -> bool:
 # ============================================================
 # 3. STREAM PROCESSING LOOP
 # ============================================================
-
-# running = True
-
-# def handle_shutdown(signum, frame):
-#     global running
-#     logger.info("Shutdown signal received. Stopping consumer...")
-#     running = False
-
-# signal.signal(signal.SIGINT, handle_shutdown)
-# signal.signal(signal.SIGTERM, handle_shutdown)
-
-# logger.info("Starting Kafka processing loop...")
-
-# try:
-#     while running:
-#         msg = consumer.poll(timeout=1.0)
-#         if msg is None:
-#             continue
-
-#         if msg.error():
-#             if msg.error().code() == KafkaError._PARTITION_EOF:
-#                 continue
-#             logger.error(f"Kafka Consumer Error: {msg.error()}")
-#             break
-
-#         value_str = msg.value().decode('utf-8') if msg.value() else "{}"
-
-#         try:
-#             val_json = json.loads(value_str)
-#         except json.JSONDecodeError:
-#             logger.warning(f"Invalid JSON at offset {msg.offset()}. Committing and skipping.")
-#             consumer.commit(message=msg, asynchronous=False)
-#             continue
-
-#         source = val_json.get("Source", "")
-#         if source and source.strip().upper() == "SUPERAPP":
-#             # Direct processing down the pipeline (no raw document upsert)
-#             process_event(val_json)
-
-#         # Commit offset after successful consumption
-#         consumer.commit(message=msg, asynchronous=False)
-
-# finally:
-#     logger.info("Closing Kafka consumer safely.")
-#     consumer.close()
+# 
+running = True
+# 
+def handle_shutdown(signum, frame):
+    global running
+    logger.info("Shutdown signal received. Stopping consumer...")
+    running = False
+# 
+signal.signal(signal.SIGINT, handle_shutdown)
+signal.signal(signal.SIGTERM, handle_shutdown)
+# 
+logger.info("Starting Kafka processing loop...")
+# 
+try:
+    while running:
+        msg = consumer.poll(timeout=1.0)
+        if msg is None:
+            continue
+        if msg.error():
+            if msg.error().code() == KafkaError._PARTITION_EOF:
+                continue
+            logger.error(f"Kafka Consumer Error: {msg.error()}")
+            break
+# 
+        value_str = msg.value().decode('utf-8') if msg.value() else "{}"
+# 
+        try:
+            val_json = json.loads(value_str)
+        except json.JSONDecodeError:
+            logger.warning(f"Invalid JSON at offset {msg.offset()}. Committing and skipping.")
+            consumer.commit(message=msg, asynchronous=False)
+            continue
+# 
+        source = val_json.get("Source", "")
+        if source and source.strip().upper() == "SUPERAPP":
+            # Direct processing down the pipeline (no raw document upsert)
+            process_event(val_json)
+# 
+        # Commit offset after successful consumption
+        consumer.commit(message=msg, asynchronous=False)
+# 
+finally:
+    logger.info("Closing Kafka consumer safely.")
+    consumer.close()

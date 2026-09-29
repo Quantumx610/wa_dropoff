@@ -42,7 +42,7 @@ COSMOS_DEDUPE_CONTAINER = os.getenv("COSMOS_DEDUPE_CONTAINER")
 
 DB_ENV = os.getenv("CONFIG", "uat")
 CSV_FILE_PATH = os.getenv("CSV_FILE_PATH", "dummy_data.csv") 
-
+SARVAM_TOTAL_ATTEMPTS = os.getenv("SARVAM_TOTAL_ATTEMPTS")
 cosmos_db_api = get_cosmos_connection()
 postgres_db_api = get_postgres_connection()
 
@@ -204,7 +204,7 @@ def process_event(event: dict) -> bool:
         "received_at_utc": received_at_utc
     }
 
-    if event_name in ["CheckChildFailure", "PLSuvidha_JourneyCompleted", "PennyDropFailure", "AMLCheckFailure"]:
+    if event_name in ["PLSuvidha_CheckChildFailure", "PLSuvidha_JourneyCompleted", "PLSuvidha_PennyDropFailure", "PLSuvidha_AMLCheckFailure"]:
         # Add the is_processed flag to the payload before inserting
         if not records:
             pg_payload["is_processed"] = True     
@@ -229,8 +229,8 @@ def process_event(event: dict) -> bool:
 
     existing_record = dict(records[0])
     call_count = existing_record.get("call_count") or 0
-    if existing_record.get("is_processed") is True or call_count >= 3:
-        if call_count >= 3:
+    if existing_record.get("is_processed") is True or call_count >= SARVAM_TOTAL_ATTEMPTS:
+        if call_count >= SARVAM_TOTAL_ATTEMPTS:
             logger.info(f"Skipping {mobile_no}: call_count>=3")
         logger.info(f"Skipping {mobile_no}: Record already processed.")
         stats["skipped_pg_processed"] += 1

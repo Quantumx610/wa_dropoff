@@ -73,17 +73,17 @@ def process_event(event: dict) -> bool:
     # Step 1: Input Log
     insert_input_log(event)
 
-    mobile_no = event.get("MobileNumber", "")
-    event_name = event.get("EventName", "")
-    enquiry_id = event.get("EnquiryNo", "")
-
+    mobile_no = event.get("MobileNumber", None)
+    event_name = event.get("EventName", None)
+    enquiry_id = event.get("EnquiryNo", None)
+    source = event.get("Source", None)
     if not mobile_no or not event_name or not enquiry_id:
         logger.warning("Exit: Event missing critical fields: mobile_no or event_name or enquiry_id.")
         return False
 
     cosmos_event = {
         "id": correlation_id,
-        "source": event.get("Source", None),
+        "source": source,
         "app_version": event.get("AppVersion", None),
         "platform": event.get("Platform", None),
         "application_id": event.get("Application_ID", None),
@@ -114,7 +114,8 @@ def process_event(event: dict) -> bool:
         return False
 
     # Store Eligible Event in Cosmos
-    cosmos_db_api.dbInsert(COSMOS_DEDUPE_CONTAINER, cosmos_event)
+    if source and source.strip().upper() == "SUPERAPP":
+        cosmos_db_api.dbInsert(COSMOS_DEDUPE_CONTAINER, cosmos_event)
 
     # Step 3: PostgreSQL Calling Ledger Check
     records = postgres_db_api.read("wa_dropoff", filters={"mobile_no": mobile_no})
@@ -138,7 +139,21 @@ def process_event(event: dict) -> bool:
         "received_at_ist": received_at_ist,
         "received_at_utc": received_at_utc
     }
-
+    if event_name in ["PLSuvidha_CheckChildFailure", "PLSuvidha_JourneyCompleted", "PLSuvidha_PennyDropFailure", "PLSuvidha_AMLCheckFailure"]:
+            # Add the is_processed flag to the payload before inserting
+            if not records:
+                pg_payload["is_processed"] = True     
+                postgres_db_api.insert("wa_dropoff", pg_payload)
+                logger.info(f"User reached failure or completion for mobile no {mobile_no}.")
+                return True
+                
+            else:
+                postgres_db_api.update(table_name="wa_dropoff",
+                                update_data={"event_name": event_name, "call_triggered": False, "is_processed": True},
+                                filters={"mobile_no": mobile_no})
+                logger.info(f"Updated drop-off record for {mobile_no} with event {event_name}, and completed the journey")
+                
+                return True
     if not records:
         postgres_db_api.insert("wa_dropoff", pg_payload)
         logger.info(f"Created new drop-off record for {mobile_no}.")
