@@ -45,6 +45,8 @@ class SarvamService:
         loan_amount_offered,
         loan_tenure,
         correlation_id,
+        enquiry_id,
+        call_count
     ):
         while not limiter.hit(SARVAM_LIMIT, "sarvam_api"):
             time.sleep(0.1)
@@ -80,10 +82,10 @@ class SarvamService:
             response = session.post(url, json=payload, timeout=15)
             if response.status_code == 200:
                 cls._logger.info(f"Sarvam call triggered for CID: {correlation_id}")
-                return True, response.json().get("attempt_id"), correlation_id
-            return False, response.text, correlation_id
+                return True, response.json().get("attempt_id"), correlation_id, enquiry_id, call_count
+            return False, response.text, correlation_id, enquiry_id, call_count
         except Exception as e:
-            return False, str(e), correlation_id
+            return False, str(e), correlation_id, enquiry_id, call_count
 
     @classmethod
     def process_batch(cls, rows: pd.DataFrame):
@@ -130,6 +132,8 @@ class SarvamService:
                     row.get("loan_amount", ""),
                     row.get("loan_tenure", ""),
                     row["correlation_id"],
+                    row["enquiry_id"],
+                    row["call_count"],
                 ): row["correlation_id"]
                 for row in dict_rows
             }
@@ -137,7 +141,7 @@ class SarvamService:
             for future in as_completed(future_to_cid):
                 cid = future_to_cid[future]
                 try:
-                    success, result, _ = future.result()
+                    success, result, _, enquiry_id, call_count = future.result()
 
                     journey_updates.append(
                         {
@@ -145,6 +149,8 @@ class SarvamService:
                             "sarvam_attempt_id": result if success else None,
                             "call_state": "success" if success else "failed",
                             "call_triggered": True,
+                            "enquiry_id": enquiry_id,
+                            "call_count": call_count
                         }
                     )
                 except Exception as e:
@@ -165,3 +171,5 @@ class SarvamService:
             )
 
         cls._logger.info("Batch processing complete.")
+        return journey_updates
+        

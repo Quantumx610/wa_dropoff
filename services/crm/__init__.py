@@ -8,7 +8,7 @@ def process_crm_enquiries(df):
         raise Exception("CRM token generation failed")
 
     for _, row in df.iterrows():
-        create_enquiry(
+        create_crm_enquiry(
             enquiry_no=str(row["enquiry_id"]),
             no_of_chunks=int(row["call_count"]),
             access_token=access_token
