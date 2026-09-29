@@ -15,6 +15,13 @@ COSMOS_DEDUPE_CONTAINER = os.getenv("COSMOS_DEDUPE_CONTAINER", "kafka_dedupe_log
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
+TERMINAL_EVENTS = {
+    "PLSuvidha_CheckChildFailure",
+    "PLSuvidha_JourneyCompleted",
+    "PLSuvidha_PennyDropFailure",
+    "PLSuvidha_AMLCheckFailure",
+}
+
 # ==========================================
 # PIPELINE BUSINESS LOGIC
 # ==========================================
@@ -73,13 +80,17 @@ def process_event(event: dict) -> bool:
     # Step 1: Input Log
     insert_input_log(event)
 
+    if not source or source.strip().upper() != "SUPERAPP":
+        return
+
     mobile_no = event.get("MobileNumber", None)
     event_name = event.get("EventName", None)
     enquiry_id = event.get("EnquiryNo", None)
     source = event.get("Source", None)
+
     if not mobile_no or not event_name or not enquiry_id:
         logger.warning("Exit: Event missing critical fields: mobile_no or event_name or enquiry_id.")
-        return False
+        return
 
     cosmos_event = {
         "id": correlation_id,
@@ -111,11 +122,9 @@ def process_event(event: dict) -> bool:
     # Step 2: Deduplication Check
     if not dedupe_log_check(mobile_no, event_name):
         logger.info(f"Dedupe hit: {mobile_no} / {event_name} seen within 30 days.")
-        return False
+        return
 
-    # Store Eligible Event in Cosmos
-    if source and source.strip().upper() == "SUPERAPP":
-        cosmos_db_api.dbInsert(COSMOS_DEDUPE_CONTAINER, cosmos_event)
+    cosmos_db_api.dbInsert(COSMOS_DEDUPE_CONTAINER, cosmos_event)
 
     # Step 3: PostgreSQL Calling Ledger Check
     records = postgres_db_api.read("wa_dropoff", filters={"mobile_no": mobile_no})
@@ -139,25 +148,23 @@ def process_event(event: dict) -> bool:
         "received_at_ist": received_at_ist,
         "received_at_utc": received_at_utc
     }
-    if event_name in ["PLSuvidha_CheckChildFailure", "PLSuvidha_JourneyCompleted", "PLSuvidha_PennyDropFailure", "PLSuvidha_AMLCheckFailure"]:
-            # Add the is_processed flag to the payload before inserting
-            if not records:
-                pg_payload["is_processed"] = True     
-                postgres_db_api.insert("wa_dropoff", pg_payload)
-                logger.info(f"User reached failure or completion for mobile no {mobile_no}.")
-                return True
-                
-            else:
-                postgres_db_api.update(table_name="wa_dropoff",
-                                update_data={"event_name": event_name, "call_triggered": False, "is_processed": True},
-                                filters={"mobile_no": mobile_no})
-                logger.info(f"Updated drop-off record for {mobile_no} with event {event_name}, and completed the journey")
-                
-                return True
+
+    if event_name in TERMINAL_EVENTS:
+        # Add the is_processed flag to the payload before inserting
+        if not records:
+            pg_payload["is_processed"] = True     
+            postgres_db_api.insert("wa_dropoff", pg_payload)
+            logger.info(f"User reached failure or completion for mobile no {mobile_no}.")
+            return
+        else:
+            postgres_db_api.update(table_name="wa_dropoff", update_data={"event_name": event_name, "call_triggered": False, "is_processed": True}, filters={"mobile_no": mobile_no})
+            logger.info(f"Updated drop-off record for {mobile_no} with event {event_name}, and completed the journey")
+            return
+
     if not records:
         postgres_db_api.insert("wa_dropoff", pg_payload)
         logger.info(f"Created new drop-off record for {mobile_no}.")
-        return True
+        return
 
     existing_record = dict(records[0])
     call_count = existing_record.get("call_count") or 0
@@ -168,11 +175,11 @@ def process_event(event: dict) -> bool:
             logger.info(f"Skipping {mobile_no}: call_count >= {SARVAM_TOTAL_ATTEMPTS}")
         else:
             logger.info(f"Skipping {mobile_no}: Record already processed.")
-        return False
+        return
 
     if existing_record.get("event_name") == event_name:
         logger.info(f"Skipping {mobile_no}: Event name unchanged.")
-        return False
+        return
 
     # Update state for changed event
     postgres_db_api.update(
@@ -181,10 +188,4 @@ def process_event(event: dict) -> bool:
         filters={"mobile_no": mobile_no}
     )
     logger.info(f"Updated drop-off record for {mobile_no} with event {event_name}.")
-    return True
-
-
-# ==========================================
-# REUSABLE KAFKA CONSUMER WRAPPER
-# ==========================================
-
+    return

@@ -36,6 +36,7 @@ def get_interactions():
         "started_at_ist": start_time_ist,
         "status": "SUCCESS",
         "inserted_count": 0,
+        "not_connected_count": 0,
         "details": {},
         "errors": []
     }
@@ -103,9 +104,34 @@ def get_interactions():
         df_int = fetch_paginated_data("interactions", less_10_min)
         df_att = fetch_paginated_data("attempts", less_10_min)
 
+        if df_att.empty:
+            logger.info("No attempts found from API. Continuing to interactions processing.")
+        else:
+            # Verify required columns exist before filtering
+            if "connectivity_status" in df_att.columns and "correlation_id" in df_att.columns:
+                # Filter for non-connected attempts
+                rechurn_eligible = df_att[df_att["connectivity_status"] != "connected"]
+
+                # Extract unique correlation IDs safely (tolist has a lowercase 'l')
+                rechurn_cor_ids = rechurn_eligible["correlation_id"].dropna().unique().tolist()
+
+                if rechurn_cor_ids:
+                    postgres_db_api.update_bulk(
+                        "wa_dropoff",
+                        {"is_connected": False, "call_state": "completed"},
+                        "correlation_id",
+                        rechurn_cor_ids
+                    )
+                    job_logs["not_connected_count"] = len(rechurn_cor_ids)
+                    logger.info(f"Updated {len(rechurn_cor_ids)} non-connected records in wa_dropoff.")
+            else:
+                logger.warning("df_att is missing 'connectivity_status' or 'correlation_id' columns.")
+
+        # Code continues seamlessly to process df_int below...
+
         if df_int.empty:
-            logger.info("No attempts found from API.")
-            job_logs["details"]["message"] = "No attempts found from API."
+            logger.info("No interactions found from API.")
+            job_logs["details"]["message"] = "No interactions found from API."
             return job_logs
 
         if "channel_direction" in df_int.columns:
