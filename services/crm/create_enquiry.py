@@ -1,9 +1,7 @@
-
 from datetime import datetime
 import pytz
 import os
 import requests
-import json
 from db import get_cosmos_connection
 from dotenv import load_dotenv
 import logging
