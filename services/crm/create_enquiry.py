@@ -17,7 +17,7 @@ COSMOS_KAFKA_CRM_OUTBOX = os.getenv("COSMOS_KAFKA_CRM_OUTBOX")
 
 IST = pytz.timezone("Asia/Kolkata")
 
-def create_enquiry(enquiry_no: str, no_of_chunks: int, access_token: str):
+def create_crm_enquiry(enquiry_no: str, no_of_chunks: int, access_token: str):
 
     cosmos_db = get_cosmos_connection()
 

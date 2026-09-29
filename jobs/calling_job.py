@@ -114,6 +114,16 @@ def calling_eligible():
             job_logs["errors"].append(err_msg)
             logger.error(err_msg, exc_info=True)
 
+        try:
+            SarvamService.process_batch(validated_df)
+            job_logs["details"]["sarvam_service"] = "success"
+        except Exception as e:
+            job_logs["status"] = "PARTIAL_FAILURE" if job_logs["status"] == "SUCCESS" else "FAILED"
+            job_logs["details"]["sarvam_service"] = "failed"
+            err_msg = f"Error during Sarvam service processing: {str(e)}"
+            job_logs["errors"].append(err_msg)
+            logger.error(err_msg, exc_info=True)
+
     job_logs["completed_at_ist"] = datetime.now(IST).strftime("%Y-%m-%dT%H:%M:%S")
 
     try:
