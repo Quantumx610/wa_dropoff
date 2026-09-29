@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from postgres_api import PostgresDatabaseAPI
+from db import get_postgres_connection, get_cosmos_connection
 import pandas as pd
 
 # Load the .env file
@@ -15,6 +15,6 @@ PG_PASSWORD = os.getenv("PGRE_PWD")
 
 # Optional: Print to verify they are loading (Delete this in production!)
 print(f"Connecting to host: {PG_HOST} as user: {PG_USER}")
-postgres_db_api = PostgresDatabaseAPI("uat")
+postgres_db_api = get_postgres_connection()
 records = postgres_db_api.read("wa_dropoff")
 pd.DataFrame(records).to_csv("dummy_data.csv", index= False)
