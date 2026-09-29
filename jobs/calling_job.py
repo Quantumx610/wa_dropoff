@@ -5,6 +5,7 @@ import pandas as pd
 import pytz
 from db import get_cosmos_connection, get_postgres_connection
 from services import SarvamService
+from services.crm import process_crm_enquiries
 from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
