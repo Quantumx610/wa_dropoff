@@ -42,7 +42,7 @@ COSMOS_DEDUPE_CONTAINER = os.getenv("COSMOS_DEDUPE_CONTAINER")
 
 DB_ENV = os.getenv("CONFIG", "uat")
 CSV_FILE_PATH = os.getenv("CSV_FILE_PATH", "dummy_data.csv") 
-SARVAM_TOTAL_ATTEMPTS = os.getenv("SARVAM_TOTAL_ATTEMPTS")
+SARVAM_TOTAL_ATTEMPTS = int(os.getenv("SARVAM_TOTAL_ATTEMPTS"))
 cosmos_db_api = get_cosmos_connection()
 postgres_db_api = get_postgres_connection()
 
